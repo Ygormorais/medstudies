@@ -7,6 +7,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MedStudies</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩺</text></svg>" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#E8362A" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="MedStudies" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -4336,7 +4341,13 @@
       renderPlanList(plan.items, true);
     } catch {
       document.getElementById('hero-tags').innerHTML = '<span class="tag-chip">Clique em Iniciar para gerar</span>';
-      document.getElementById('plan-list').innerHTML = '<div class="empty">Nenhum plano. Clique em "Iniciar Revisão Diária".</div>';
+      document.getElementById('plan-list').innerHTML = `
+        <div style="text-align:center;padding:32px 20px">
+          <div style="font-size:40px;margin-bottom:12px">📋</div>
+          <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:6px">Nenhum plano para hoje</div>
+          <div style="font-size:13px;color:var(--sub);margin-bottom:18px">Gere seu plano de estudos personalizado com base no seu desempenho</div>
+          <button onclick="generatePlan()" style="background:var(--primary);color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer">🚀 Gerar Plano Agora</button>
+        </div>`;
       document.getElementById('plan-badge').textContent = 'sem plano';
       document.getElementById('cta-label').textContent = 'Gerar Plano de Hoje';
     }
@@ -4467,7 +4478,7 @@
       // weak-body exists only on Report page — skip if not present
       const tbody = document.getElementById('weak-body');
       if (!tbody) return;
-      if (!data.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">Sem dados suficientes.</td></tr>'; return; }
+      if (!data.length) { tbody.innerHTML = `<tr><td colspan="4"><div style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">📊</div><div style="font-size:14px;font-weight:700;color:var(--text)">Sem dados ainda</div><div style="font-size:12px;color:var(--sub);margin-top:4px">Registre questões para ver seus tópicos fracos</div><button onclick="openModal('modal-question')" style="margin-top:14px;background:var(--primary);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer">✏️ Registrar Questão</button></div></td></tr>`; return; }
       tbody.innerHTML = data.map(t => {
         const pct = t.error_rate_pct;
         const color = pct >= 70 ? 'var(--red)' : pct >= 40 ? '#F59E0B' : '#22C55E';
@@ -5021,7 +5032,7 @@
           <td style="color:var(--sub);font-size:12px">${t.wrong_questions}/${t.total_questions}</td>
           <td style="font-size:12px;color:var(--sub)">${t.priority_score.toFixed(2)}</td>
         </tr>`;
-      }).join('') || '<tr><td colspan="6" class="empty">Sem dados suficientes.</td></tr>';
+      }).join('') || `<tr><td colspan="6"><div style="text-align:center;padding:32px 20px"><div style="font-size:40px;margin-bottom:10px">🎯</div><div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:6px">Nenhum tópico fraco encontrado</div><div style="font-size:13px;color:var(--sub);margin-bottom:16px">Registre questões para identificar seus pontos a melhorar</div><button onclick="openModal('modal-question')" style="background:var(--primary);color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer">✏️ Registrar Questões</button></div></td></tr>`;
     } catch(e) { console.error('report:', e); }
   }
 
@@ -6488,7 +6499,7 @@ ${(plan.items || []).map((item, i) => `<tr>
               <div class="activity-score" style="background:${c}22;color:${c}">${Math.round(info.priority * 100)}</div>
             </div>`;
           }).join('')
-        : '<div class="empty">Sem tópicos cadastrados.</div>';
+        : `<div style="text-align:center;padding:20px 16px"><div style="font-size:28px;margin-bottom:8px">📚</div><div style="font-size:13px;font-weight:700;color:var(--text)">Nenhum tópico cadastrado</div><div style="font-size:11px;color:var(--sub);margin:4px 0 12px">Adicione disciplinas e tópicos para começar</div><button onclick="navTo('page-config','nav-config')" style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">⚙️ Configurar</button></div>`;
       // topics progress bar
       const topicsWithData = scores.filter(s => s.total_questions > 0).length;
       const pct = scores.length ? Math.round(topicsWithData / scores.length * 100) : 0;
@@ -12456,7 +12467,50 @@ ${list.innerHTML}
   }
 
   loadAll();
+
+  // ── PWA: register service worker ──────────────────────────────────────────
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+  }
+
+  // ── PWA: install prompt banner ─────────────────────────────────────────────
+  let _pwaPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    _pwaPrompt = e;
+    // show subtle install banner after 30s if user hasn't dismissed
+    if (!localStorage.getItem('pwa_dismissed')) {
+      setTimeout(() => {
+        if (!_pwaPrompt) return;
+        const banner = document.getElementById('pwa-install-banner');
+        if (banner) banner.style.display = 'flex';
+      }, 30000);
+    }
+  });
+  function pwaInstall() {
+    if (!_pwaPrompt) return;
+    _pwaPrompt.prompt();
+    _pwaPrompt.userChoice.then(() => { _pwaPrompt = null; pwaDismiss(); });
+  }
+  function pwaDismiss() {
+    localStorage.setItem('pwa_dismissed', '1');
+    const banner = document.getElementById('pwa-install-banner');
+    if (banner) banner.style.display = 'none';
+  }
 </script>
+
+<!-- ── PWA Install Banner ─────────────────────────────────────────────────── -->
+<div id="pwa-install-banner" style="display:none;position:fixed;bottom:72px;left:50%;transform:translateX(-50%);z-index:600;background:var(--card);border:1.5px solid var(--primary);border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.18);padding:12px 18px;align-items:center;gap:14px;min-width:280px;max-width:92vw">
+  <span style="font-size:22px">🩺</span>
+  <div style="flex:1">
+    <div style="font-size:13px;font-weight:800;color:var(--text)">Instalar MedStudies</div>
+    <div style="font-size:11px;color:var(--sub);margin-top:2px">Acesso rápido na tela inicial</div>
+  </div>
+  <button onclick="pwaInstall()" style="background:var(--primary);color:#fff;border:none;border-radius:10px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">Instalar</button>
+  <button onclick="pwaDismiss()" style="background:none;border:none;cursor:pointer;color:var(--sub);font-size:18px;line-height:1;padding:4px">×</button>
+</div>
 
 <!-- ── Global Search Palette (Ctrl+K) ────────────────────────────────────── -->
 <div class="search-overlay" id="palette-overlay" style="display:none" onclick="if(event.target===this)closePalette()">

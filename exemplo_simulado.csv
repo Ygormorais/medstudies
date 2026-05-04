@@ -1,0 +1,11 @@
+subject_name,topic_name,correct,notes
+Cardiologia,Insuficiência Cardíaca,false,Confundi BNP com troponina
+Cardiologia,FA e Flutter,true,
+Cardiologia,Hipertensão Arterial,false,Critérios JNC errei
+Pneumologia,DPOC,false,Estadiamento GOLD
+Pneumologia,Asma,true,
+Clínica Médica,Sepse,false,SOFA score
+Clínica Médica,Equilíbrio Ácido-Base,true,
+Neurologia,AVC Isquêmico,false,Janela trombolítica
+Neurologia,Epilepsia,true,
+Gastroenterologia,Cirrose Hepática,false,Child-Pugh confundi

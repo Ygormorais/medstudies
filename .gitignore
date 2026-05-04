@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Database & user data (never commit personal data)
+data/*.db
+data/exports/
+data/imports/
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment / secrets
+.env
+.env.*
+*.env
+secrets.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+__MACOSX/
+
+# Keep data dir structure but not contents
+!data/.gitkeep
+!data/exports/.gitkeep
+!data/imports/.gitkeep
+
+# Claude Code local settings (permissions, not for repo)
+.claude/settings.local.json

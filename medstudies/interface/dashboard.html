@@ -2227,6 +2227,14 @@
           <div class="table-card-head">📅 Comparativo Mensal <span style="font-size:12px;color:var(--sub);font-weight:500">últimos 3 meses — volume + acerto %</span></div>
           <div style="padding:20px"><canvas id="monthly-compare-chart" height="100"></canvas></div>
         </div>
+        <!-- Burndown chart -->
+        <div class="table-card" style="margin-bottom:16px" id="burndown-card">
+          <div class="table-card-head">📉 Burndown até a Prova <span style="font-size:12px;color:var(--sub);font-weight:500">ritmo atual vs. meta</span></div>
+          <div style="padding:20px">
+            <div id="burndown-no-exam" style="display:none;text-align:center;padding:24px;color:var(--sub);font-size:13px">Configure a data da prova em <b>Configurações</b> para ver o burndown.</div>
+            <canvas id="burndown-chart" height="100"></canvas>
+          </div>
+        </div>
         <div class="sm2-chart-wrap">
           <div style="font-size:13px;font-weight:800;margin-bottom:14px">🧠 Progresso SM-2 por Matéria</div>
           <canvas id="sm2-chart" height="80"></canvas>
@@ -4676,7 +4684,7 @@
     // lazy-load page data
     if (pageId === 'page-dashboard') loadHeroProgress();
     if (pageId === 'page-questions') initQQPage();
-    if (pageId === 'page-stats') { loadStatsPage(); loadSm2Chart(); loadMaturityChart(); loadSubjectGoals(); loadAccuracyGoals(); loadSourceStats(); loadEvolutionChart(); loadVelocityChart(); loadWeekdayErrorChart(); loadSubjectRanking(); loadSimuladosCompare(); loadSimuladosTrend(); loadXPHistory(); loadTopErrors(); loadRadarChart(); loadDonutChart(); loadTimeBySubject(); loadHeatmap(); loadEffortScatter(); loadRecurringErrors(); _populateSubjectCompareSelects(); loadWeeklyBySubject(); loadMonthlyComparison(); }
+    if (pageId === 'page-stats') { loadStatsPage(); loadSm2Chart(); loadMaturityChart(); loadSubjectGoals(); loadAccuracyGoals(); loadSourceStats(); loadEvolutionChart(); loadVelocityChart(); loadWeekdayErrorChart(); loadSubjectRanking(); loadSimuladosCompare(); loadSimuladosTrend(); loadXPHistory(); loadTopErrors(); loadRadarChart(); loadDonutChart(); loadTimeBySubject(); loadHeatmap(); loadEffortScatter(); loadRecurringErrors(); _populateSubjectCompareSelects(); loadWeeklyBySubject(); loadMonthlyComparison(); loadBurndownChart(); }
     if (pageId === 'page-erros') initErrosPage();
     if (pageId === 'page-routine') { initRoutine(); loadSessionHistory(); loadStudyLoadEstimate(); }
     if (pageId === 'page-report') loadReportPage();
@@ -11050,6 +11058,76 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     } catch(e) {}
   }
 
+  // ── Burndown Chart ────────────────────────────────────────────────────────────
+  let _burndownChart = null;
+  async function loadBurndownChart() {
+    const canvas = document.getElementById('burndown-chart');
+    if (!canvas) return;
+    const cfg = JSON.parse(localStorage.getItem('medstudies_config') || '{}');
+    const examDate = cfg.examDate;
+    if (!examDate) {
+      document.getElementById('burndown-no-exam').style.display = 'block';
+      canvas.style.display = 'none';
+      return;
+    }
+    document.getElementById('burndown-no-exam').style.display = 'none';
+    canvas.style.display = 'block';
+    try {
+      const [stats, daily] = await Promise.all([
+        fetchJSON('/api/stats'),
+        fetchJSON('/api/stats/daily?days=30'),
+      ]);
+      const today = new Date(); today.setHours(0,0,0,0);
+      const exam  = new Date(examDate + 'T00:00:00');
+      const daysLeft = Math.max(0, Math.ceil((exam - today) / 86400000));
+      const totalQ   = stats.total_questions || 0;
+
+      // avg daily rate (last 14 days with activity)
+      const active = daily.filter(d => d.total > 0);
+      const avgDaily = active.length ? active.reduce((s,d) => s + d.total, 0) / active.length : 0;
+
+      // build weekly burndown: projected vs ideal
+      const weekCount = Math.min(Math.ceil(daysLeft / 7), 16);
+      const labels = ['Hoje'];
+      const projected = [totalQ];
+      const ideal = [totalQ];
+
+      // goal: reach weekGoal * weeksLeft by exam day (or just show pace)
+      const weekGoal = cfg.weekGoal || 50;
+      const totalNeeded = weekGoal * Math.ceil(daysLeft / 7);
+
+      for (let w = 1; w <= weekCount; w++) {
+        const d = new Date(today); d.setDate(d.getDate() + w * 7);
+        labels.push(d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }));
+        projected.push(Math.round(totalQ + avgDaily * 7 * w));
+        ideal.push(Math.round(totalQ + (totalNeeded / weekCount) * w));
+      }
+      labels.push('Prova');
+      projected.push(Math.round(totalQ + avgDaily * daysLeft));
+      ideal.push(totalQ + totalNeeded);
+
+      if (_burndownChart) _burndownChart.destroy();
+      _burndownChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Ritmo atual', data: projected, borderColor: '#E8362A', backgroundColor: 'rgba(232,54,42,.08)', fill: true, tension: .4, pointRadius: 3 },
+            { label: 'Meta ideal', data: ideal, borderColor: '#22C55E', backgroundColor: 'transparent', borderDash: [6,3], tension: .4, pointRadius: 0 },
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'top' }, tooltip: { mode: 'index', intersect: false } },
+          scales: {
+            x: { ticks: { maxTicksLimit: 8 } },
+            y: { beginAtZero: false, title: { display: true, text: 'Questões acumuladas' } }
+          }
+        }
+      });
+    } catch(e) { console.error('burndown:', e); }
+  }
+
   // ── M6: Quick Notes ───────────────────────────────────────────────────────────
   const _NOTES_KEY = 'quick_notes_v1';
   function _getNotes() { try { return JSON.parse(localStorage.getItem(_NOTES_KEY) || '[]'); } catch { return []; } }
@@ -12308,26 +12386,54 @@ ${list.innerHTML}
       }
       plan.forEach((t, i) => daysArr[i % daysLeft].topics.push(t));
 
+      // load saved progress
+      const _cramKey = `cram_progress_${name}_${dateStr}`;
+      let _cramDone = new Set(JSON.parse(localStorage.getItem(_cramKey) || '[]'));
+
+      function _cramToggle(topicId, el) {
+        if (_cramDone.has(topicId)) { _cramDone.delete(topicId); el.style.opacity = '1'; el.style.textDecoration = 'none'; }
+        else { _cramDone.add(topicId); el.style.opacity = '.45'; el.style.textDecoration = 'line-through'; }
+        localStorage.setItem(_cramKey, JSON.stringify([..._cramDone]));
+        // update progress bar
+        const pct = plan.length ? Math.round(_cramDone.size / plan.length * 100) : 0;
+        const bar = document.getElementById('cram-progress-bar');
+        const lbl = document.getElementById('cram-progress-lbl');
+        if (bar) bar.style.width = pct + '%';
+        if (lbl) lbl.textContent = `${_cramDone.size}/${plan.length} concluídos (${pct}%)`;
+      }
+
       // render
       document.getElementById('cram-config').style.display = 'none';
       const wrap = document.getElementById('cram-plan-wrap');
       wrap.style.display = 'block';
-      const ACTION_COLOR2 = { review:'var(--primary)', practice:'var(--green)', memorize:'#F59E0B', new:'#a78bfa' };
+      const donePct = plan.length ? Math.round(_cramDone.size / plan.length * 100) : 0;
       document.getElementById('cram-plan-list').innerHTML = `
-        <div style="background:rgba(232,54,42,.08);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--sub)">
+        <div style="background:rgba(232,54,42,.08);border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--sub)">
           📊 ${plan.length} tópicos · ${daysLeft} dias · ~${minPerTopicActual}min/tópico · ${hoursDay}h/dia
+        </div>
+        <div style="margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:var(--sub);margin-bottom:6px">
+            <span>Progresso Cram</span><span id="cram-progress-lbl">${_cramDone.size}/${plan.length} concluídos (${donePct}%)</span>
+          </div>
+          <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+            <div id="cram-progress-bar" style="height:100%;width:${donePct}%;background:var(--primary);border-radius:4px;transition:width .3s"></div>
+          </div>
         </div>
         ${daysArr.filter(d=>d.topics.length).map(day => `
           <div style="margin-bottom:14px">
             <div style="font-size:11px;font-weight:800;color:var(--sub);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${day.label}</div>
-            ${day.topics.map(t => `
-              <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--bg);border-radius:10px;margin-bottom:6px;cursor:pointer" onclick="openTopicDetail(${t.topic_id})">
-                <div style="flex:1">
+            ${day.topics.map(t => {
+              const done = _cramDone.has(t.topic_id);
+              return `<div id="cram-row-${t.topic_id}" style="display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--bg);border-radius:10px;margin-bottom:6px;opacity:${done?.45:1};text-decoration:${done?'line-through':'none'};cursor:pointer"
+                onclick="_cramToggle(${t.topic_id},this)">
+                <input type="checkbox" ${done?'checked':''} onclick="event.stopPropagation();_cramToggle(${t.topic_id},document.getElementById('cram-row-${t.topic_id}'))" style="width:16px;height:16px;accent-color:var(--primary);flex-shrink:0">
+                <div style="flex:1" onclick="event.stopPropagation();openTopicDetail(${t.topic_id})">
                   <div style="font-size:13px;font-weight:700">${t.topic_name}</div>
-                  <div style="font-size:11px;color:var(--sub)">${t.subject_name} · ${t.error_rate_pct}% erro · score ${t.priority_score.toFixed(2)}</div>
+                  <div style="font-size:11px;color:var(--sub)">${t.subject_name} · ${t.error_rate_pct}% erro</div>
                 </div>
-                <span style="font-size:11px;font-weight:700;color:var(--red)">${minPerTopicActual}min</span>
-              </div>`).join('')}
+                <span style="font-size:11px;font-weight:700;color:var(--red);white-space:nowrap">${minPerTopicActual}min</span>
+              </div>`;
+            }).join('')}
           </div>`).join('')}`;
     } catch(e) { toast('❌ Erro ao gerar plano: ' + e.message); }
   }

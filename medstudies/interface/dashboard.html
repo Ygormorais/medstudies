@@ -854,6 +854,26 @@
       #topbar-silent-btn span:last-child,
       #topbar-notes-btn span:last-child { display: none; }
     }
+    /* ── Skeleton loaders ── */
+    @keyframes shimmer {
+      0%   { background-position: -400px 0; }
+      100% { background-position: 400px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, var(--border) 25%, var(--bg) 50%, var(--border) 75%);
+      background-size: 800px 100%;
+      animation: shimmer 1.4s infinite linear;
+      border-radius: 6px;
+    }
+    .sk-row { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); }
+    .sk-icon { width:32px; height:32px; border-radius:8px; flex-shrink:0; }
+    .sk-lines { flex:1; display:flex; flex-direction:column; gap:6px; }
+    .sk-line { height:10px; border-radius:4px; }
+    .sk-line.long  { width:70%; }
+    .sk-line.short { width:40%; }
+    .sk-line.full  { width:95%; }
+    .sk-card { padding:16px; border-radius:12px; background:var(--card); box-shadow:var(--shadow); margin-bottom:10px; display:flex; flex-direction:column; gap:10px; }
+    .sk-badge { width:56px; height:20px; border-radius:10px; }
     /* ── Tags ── */
     .tag-chip-sm { display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;color:#fff;margin:2px; }
     .tag-chip-sm .tag-x { cursor:pointer;opacity:.7;font-size:10px;margin-left:2px; }
@@ -1887,7 +1907,11 @@
           <button onclick="startPlanSelReview()" style="background:#fff;color:var(--primary);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer">⚡ Revisar selecionados →</button>
         </div>
         <div class="plan-list" id="plan-list">
-          <div class="empty"><span class="spinner"></span> Carregando...</div>
+          <div class="sk-row"><div class="sk-icon skeleton"></div><div class="sk-lines"><div class="sk-line long skeleton"></div><div class="sk-line short skeleton"></div></div></div>
+          <div class="sk-row"><div class="sk-icon skeleton"></div><div class="sk-lines"><div class="sk-line full skeleton"></div><div class="sk-line short skeleton"></div></div></div>
+          <div class="sk-row"><div class="sk-icon skeleton"></div><div class="sk-lines"><div class="sk-line long skeleton"></div><div class="sk-line short skeleton"></div></div></div>
+          <div class="sk-row"><div class="sk-icon skeleton"></div><div class="sk-lines"><div class="sk-line full skeleton"></div><div class="sk-line short skeleton"></div></div></div>
+          <div class="sk-row"><div class="sk-icon skeleton"></div><div class="sk-lines"><div class="sk-line long skeleton"></div><div class="sk-line short skeleton"></div></div></div>
         </div>
       </div>
 
@@ -1898,7 +1922,9 @@
           <span class="badge" id="week-badge">próximos 7 dias</span>
         </div>
         <div id="weekly-grid" style="display:grid;gap:10px;">
-          <div class="empty"><span class="spinner"></span> Carregando...</div>
+          <div class="sk-card"><div class="sk-line long skeleton"></div><div class="sk-line short skeleton"></div></div>
+          <div class="sk-card"><div class="sk-line long skeleton"></div><div class="sk-line short skeleton"></div></div>
+          <div class="sk-card"><div class="sk-line full skeleton"></div><div class="sk-line short skeleton"></div></div>
         </div>
       </div>
 
@@ -1914,7 +1940,9 @@
           <span class="activity-date" id="act-date"></span>
         </div>
         <div id="activity-list">
-          <div class="empty"><span class="spinner"></span></div>
+          <div class="sk-row"><div class="sk-icon skeleton" style="width:24px;height:24px;border-radius:50%"></div><div class="sk-lines"><div class="sk-line long skeleton"></div></div></div>
+          <div class="sk-row"><div class="sk-icon skeleton" style="width:24px;height:24px;border-radius:50%"></div><div class="sk-lines"><div class="sk-line full skeleton"></div></div></div>
+          <div class="sk-row"><div class="sk-icon skeleton" style="width:24px;height:24px;border-radius:50%"></div><div class="sk-lines"><div class="sk-line short skeleton"></div></div></div>
         </div>
       </div>
 
@@ -4237,6 +4265,22 @@
   }
 
   // ── API ────────────────────────────────────────────────────────────────────
+  // ── Skeleton helpers ───────────────────────────────────────────────────────
+  function skeletonRows(n = 4, icon = true) {
+    return Array.from({ length: n }, () =>
+      `<div class="sk-row">${icon ? '<div class="sk-icon skeleton"></div>' : ''}
+        <div class="sk-lines">
+          <div class="sk-line ${Math.random() > .5 ? 'long' : 'full'} skeleton"></div>
+          <div class="sk-line short skeleton"></div>
+        </div></div>`
+    ).join('');
+  }
+  function skeletonTable(rows = 4, cols = 4) {
+    const widths = ['40%','60%','30%','50%','70%','35%'];
+    const tr = () => `<tr>${Array.from({length:cols},(_,i)=>`<td><div class="sk-line skeleton" style="height:10px;border-radius:4px;width:${widths[(i+Math.floor(Math.random()*3))%widths.length]}"></div></td>`).join('')}</tr>`;
+    return Array.from({length:rows}, tr).join('');
+  }
+
   const _apiCache = new Map();
   const _API_CACHE_TTL = 8000;
   const _inflightReqs = new Map();
@@ -4283,6 +4327,7 @@
   }
 
   async function loadPlan() {
+    document.getElementById('plan-list').innerHTML = skeletonRows(5);
     try {
       const plan = await fetchJSON('/api/plan/latest');
       window._planItems = plan.items;
@@ -4961,6 +5006,7 @@
 
   // ── Report page ────────────────────────────────────────────────────────────
   async function loadReportPage() {
+    document.getElementById('report-body').innerHTML = skeletonTable(6, 6);
     try {
       const data = await fetchJSON('/api/topics/weak?min_questions=1&top=50');
       document.getElementById('report-count').textContent = data.length;
@@ -6417,6 +6463,7 @@ ${(plan.items || []).map((item, i) => `<tr>
   const ACT_COLORS = ['#E8362A','#2979E0','#7C3AED','#F59E0B','#22C55E','#FF6B2B'];
 
   async function loadActivities() {
+    document.getElementById('activity-list').innerHTML = skeletonRows(3, false);
     try {
       const scores = await fetchJSON('/api/topics/scores');
       // group by subject
@@ -7156,7 +7203,7 @@ ${(plan.items || []).map((item, i) => `<tr>
     if (tagFilter) params.set('tag', tagFilter);
 
     const tbody = document.getElementById('hist-tbody');
-    tbody.innerHTML = '<tr><td colspan="11" class="empty"><span class="spinner"></span> Carregando...</td></tr>';
+    tbody.innerHTML = skeletonTable(8, 11);
     try {
       const data = await fetchJSON(`/api/questions/history?${params}`);
 

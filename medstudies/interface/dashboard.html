@@ -818,23 +818,41 @@
     /* ── Mobile responsive ── */
     @media (max-width: 700px) {
       :root { --sidebar: 0px; }
-      .sidebar { width: 100%; min-height: auto; flex-direction: row; flex-wrap: wrap; bottom: 0; top: auto; left: 0; right: 0; height: 56px; overflow-x: auto; padding: 0 8px; border-right: none; border-top: 1px solid var(--border); z-index: 300; justify-content: flex-start; gap: 0; }
+      .sidebar { width: 100%; min-height: auto; flex-direction: row; flex-wrap: nowrap; bottom: 0; top: auto; left: 0; right: 0; height: 56px; overflow-x: auto; overflow-y: hidden; padding: 0 4px; border-right: none; border-top: 1px solid var(--border); z-index: 300; justify-content: flex-start; gap: 0; }
       .sidebar-logo { display: none; }
       .sidebar-divider { display: none; }
-      .sidebar-icon { min-width: 52px; border-radius: 8px; padding: 6px 4px; }
+      .sidebar-icon { min-width: 48px; flex-shrink: 0; border-radius: 8px; padding: 5px 4px; }
       .sidebar-lbl { font-size: 8px; }
       .main { margin-left: 0 !important; padding-bottom: 68px; }
       .content { flex-direction: column; }
       .col-main, .col-side { width: 100%; max-width: 100%; }
-      .topbar { left: 0; }
+      .topbar { left: 0; padding: 0 10px; gap: 6px; }
       .hero-card { border-radius: 12px; }
+      /* topbar — hide non-essential widgets on small screens */
+      #study-timer { display: none; }
+      .xp-bar-wrap { display: none; }
+      .xp-label { display: none; }
+      /* modals full-screen on mobile */
+      .modal-box { width: 96vw !important; max-width: 96vw !important; max-height: 90vh; overflow-y: auto; margin: 0 auto; }
+      /* pomodoro widget above mobile nav bar */
+      .pomo-widget { bottom: 68px; left: 8px; right: 8px; width: auto; }
+      /* cards grid 1 col */
+      .stats-grid { grid-template-columns: 1fr 1fr !important; }
+      /* hero stats wrap */
+      .hero-stats { flex-wrap: wrap; gap: 8px; }
+      /* fc-suggest banner */
+      #fc-suggest-banner { flex-wrap: wrap; gap: 6px; }
     }
     @media (max-width: 480px) {
-      .topbar { padding: 0 12px; }
-      .toolbar { gap: 6px; }
-      .toolbar-btn { font-size: 11px; padding: 6px 10px; }
+      .topbar { padding: 0 8px; gap: 4px; }
+      .toolbar { gap: 4px; }
+      .toolbar-btn { font-size: 11px; padding: 5px 8px; }
       .plan-row { flex-wrap: wrap; }
       .plan-right { width: 100%; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+      .stats-grid { grid-template-columns: 1fr !important; }
+      /* topbar buttons collapse */
+      #topbar-silent-btn span:last-child,
+      #topbar-notes-btn span:last-child { display: none; }
     }
     /* ── Tags ── */
     .tag-chip-sm { display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;color:#fff;margin:2px; }

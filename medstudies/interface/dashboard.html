@@ -282,19 +282,22 @@
     }
 
     .hero-orb {
-      width: 120px; height: 120px;
+      width: 110px; height: 110px;
       border-radius: 50%;
-      background: radial-gradient(circle at 35% 35%, #60B4FF, #2060FF 50%, #8040FF);
+      background: radial-gradient(circle at 35% 35%, #FF6B5B, #E8362A 55%, #B02010);
       flex-shrink: 0;
-      box-shadow: 0 8px 32px rgba(96,100,255,0.35);
+      box-shadow: 0 8px 32px rgba(232,54,42,0.45);
       position: relative;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 48px;
+      user-select: none;
     }
     .hero-orb::after {
       content: '';
       position: absolute;
       top: 14%; left: 20%;
       width: 30%; height: 18%;
-      background: rgba(255,255,255,0.45);
+      background: rgba(255,255,255,0.35);
       border-radius: 50%;
       filter: blur(2px);
       transform: rotate(-30deg);
@@ -1724,7 +1727,7 @@
             <div class="hero-title">Revisão Sugerida<br>para Hoje</div>
             <div class="hero-sub">Faça uma revisão <b>Normal</b> ou <span class="express">Express</span><br>para manter seu ritmo de estudos.</div>
           </div>
-          <div class="hero-orb"></div>
+          <div class="hero-orb">🩺</div>
         </div>
 
         <div class="hero-body">

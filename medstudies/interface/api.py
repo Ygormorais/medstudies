@@ -41,7 +41,12 @@ INTERFACE_DIR   = Path(__file__).parent
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
-    return DASHBOARD_HTML.read_text(encoding="utf-8")
+    from fastapi.responses import Response
+    return Response(
+        content=DASHBOARD_HTML.read_text(encoding="utf-8"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get("/manifest.json")

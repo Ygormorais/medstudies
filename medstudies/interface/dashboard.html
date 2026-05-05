@@ -2739,7 +2739,7 @@
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <input type="file" id="csv-import-input" accept=".csv" style="flex:1;min-width:0;font-size:12px;color:var(--text)" />
-          <button class="config-save-btn" onclick="importQuestionsCSV()">📤 Importar</button>
+          <button class="config-save-btn" onclick="importQuestionsCSVUpload()">📤 Importar</button>
         </div>
         <div id="csv-import-result" style="margin-top:10px;font-size:12px;color:var(--sub)"></div>
       </div>
@@ -2861,7 +2861,7 @@
           <div><div class="config-row-label">Restaurar banco de dados</div><div class="config-row-sub">Substitui o banco atual pelo arquivo selecionado. Faça backup antes!</div></div>
           <div style="display:flex;gap:10px;width:100%">
             <input type="file" accept=".db" id="restore-file" class="config-input" style="flex:1;text-align:left;padding:6px" />
-            <button class="config-save-btn" onclick="restoreDB()" style="margin-top:0">Restaurar</button>
+            <button class="config-save-btn" onclick="restoreDBById()" style="margin-top:0">Restaurar</button>
           </div>
           <div id="restore-result" style="font-size:12px;color:var(--sub)"></div>
         </div>
@@ -3190,7 +3190,7 @@
           <button id="hist-bulk-delete-btn" onclick="bulkDeleteQuestions()" style="display:none;padding:6px 14px;border-radius:8px;border:none;background:var(--red);color:#fff;font-size:12px;font-weight:700;cursor:pointer">🗑 Apagar selecionadas</button>
           <label title="Importar questões via CSV" style="padding:6px 14px;border-radius:8px;border:1.5px solid var(--border);background:transparent;cursor:pointer;font-size:12px;font-weight:700;color:var(--text);display:inline-flex;align-items:center;gap:5px">
             📥 Importar CSV
-            <input type="file" accept=".csv" style="display:none" onchange="importQuestionsCSV(this)">
+            <input type="file" accept=".csv" style="display:none" onchange="importQuestionsCSVFile(this)">
           </label>
         </div>
       </div>
@@ -5808,21 +5808,11 @@
     reader.readAsText(file);
   }
 
-  async function restoreDB() {
+  async function restoreDBById() {
     const fileInput = document.getElementById('restore-file');
-    if (!fileInput.files.length) { toast('Selecione um arquivo .db primeiro.'); return; }
-    const file = fileInput.files[0];
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-      const r = await fetch('/api/restore', { method: 'POST', body: formData });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || 'Erro desconhecido');
-      toast('✓ Banco restaurado com sucesso. Recarregando...');
-      setTimeout(() => location.reload(), 1500);
-    } catch(e) {
-      toast('Erro ao restaurar: ' + e.message);
-    }
+    if (!fileInput || !fileInput.files.length) { toast('Selecione um arquivo .db primeiro.'); return; }
+    await restoreDB(fileInput);
+  }
   }
 
   // ── Relatório PDF ──────────────────────────────────────────────────────────
@@ -6241,58 +6231,6 @@ ${(plan.items || []).map((item, i) => `<tr>
   }
 
   // L4: annual heatmap
-  async function loadHeatmap() {
-    const wrap = document.getElementById('heatmap-wrap');
-    if (!wrap) return;
-    try {
-      const { counts } = await fetchJSON('/api/stats/heatmap?days=365');
-      const isDark = document.documentElement.classList.contains('dark');
-      const COLORS = isDark
-        ? ['#1e2533','#164e2a','#15803d','#22c55e','#86efac']
-        : ['#ebedf0','#9be9a8','#40c463','#30a14e','#216e39'];
-      const max = Math.max(1, ...Object.values(counts));
-      const today = new Date();
-      // build 53 weeks × 7 days grid, starting Monday 52 weeks ago
-      const start = new Date(today);
-      start.setDate(start.getDate() - 364);
-      // align to previous Sunday
-      start.setDate(start.getDate() - start.getDay());
-      const weeks = [];
-      let cur = new Date(start);
-      while (cur <= today) {
-        const week = [];
-        for (let d = 0; d < 7; d++) {
-          const key = cur.toISOString().slice(0, 10);
-          const cnt = counts[key] || 0;
-          const level = cnt === 0 ? 0 : Math.min(4, Math.ceil(cnt / max * 4));
-          week.push({ key, cnt, level, date: new Date(cur) });
-          cur.setDate(cur.getDate() + 1);
-        }
-        weeks.push(week);
-      }
-      // month labels
-      const monthLabels = [];
-      weeks.forEach((w, wi) => {
-        const d = w[0].date;
-        if (wi === 0 || d.getDate() <= 7) {
-          monthLabels[wi] = d.toLocaleString('pt-BR', { month: 'short' });
-        }
-      });
-      wrap.innerHTML = weeks.map((week, wi) => {
-        const ml = monthLabels[wi] ? `<div style="font-size:9px;color:var(--sub);height:14px;text-align:center">${monthLabels[wi]}</div>` : `<div style="height:14px"></div>`;
-        const cells = week.map(day => {
-          const bg = COLORS[day.level];
-          const title = `${day.key}: ${day.cnt} questão${day.cnt !== 1 ? 'ões' : ''}`;
-          return `<div title="${title}" style="width:11px;height:11px;border-radius:2px;background:${bg};flex-shrink:0"></div>`;
-        }).join('');
-        return `<div style="display:flex;flex-direction:column;gap:2px">${ml}${cells}</div>`;
-      }).join('');
-      // legend
-      document.getElementById('heatmap-legend').innerHTML =
-        COLORS.map(c => `<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:${c}"></span>`).join('');
-    } catch(e) { console.warn('loadHeatmap:', e); }
-  }
-
   let _timeSubjDonut = null;
   async function loadTimeBySubject() {
     const el = document.getElementById('stats-time-by-subject');
@@ -7280,7 +7218,7 @@ ${(plan.items || []).map((item, i) => `<tr>
   }
 
   // M4: import questions CSV
-  async function importQuestionsCSV(input) {
+  async function importQuestionsCSVFile(input) {
     const file = input.files[0];
     if (!file) return;
     input.value = ''; // reset so same file can be picked again
@@ -9046,7 +8984,7 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     }, 150);
   }
 
-  async function importQuestionsCSV() {
+  async function importQuestionsCSVUpload() {
     const input = document.getElementById('csv-import-input');
     const result = document.getElementById('csv-import-result');
     if (!input.files.length) { toast('Selecione um arquivo CSV.', 'error'); return; }
@@ -10144,6 +10082,7 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
         setTimeout(() => { if (hint) hint.textContent = ''; }, 1500);
       }
     } catch(e) {}
+    _invalidateCache('/api/flashcards');
     // Hard (quality<3) requeues
     if (quality < 3) _sm2Queue.push({...card});
     _sm2Done++;
@@ -10213,20 +10152,6 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     document.getElementById('sm2-card-inner').classList.toggle('flipped');
     _sm2Flipped = !_sm2Flipped;
     document.getElementById('sm2-rating-row').style.display = _sm2Flipped ? 'flex' : 'none';
-  }
-
-  async function rateSM2(rating) {
-    if (_sm2Idx >= _sm2Queue.length) return;
-    const card = _sm2Queue[_sm2Idx];
-    // POST reviewed; if hard, push card to end of queue for re-review this session
-    try { await fetch(`/api/flashcards/${card.id}/reviewed`, { method: 'POST' }); } catch(e) {}
-    _invalidateCache('/api/flashcards');
-    if (rating === 'hard') {
-      _sm2Queue.push({...card}); // re-queue at end
-    }
-    _sm2Done++;
-    _sm2Idx++;
-    renderSM2();
   }
 
   function showSM2Done() {
@@ -10552,7 +10477,7 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
   // ── Quick Review ─────────────────────────────────────────────────────────────
   let _qrItems = [], _qrIdx = 0;
 
-  async function openQuickReview() {
+  async function openFavoritesReview() {
     try {
       const favs = await fetchJSON('/api/topics/favorites');
       if (!favs.length) { toast('Nenhum favorito! Marque tópicos com ⭐ no plano.'); return; }
@@ -11552,23 +11477,7 @@ ${list.innerHTML}
     toast('Lembrete removido.');
   }
 
-  function scheduleReminder(timeStr) {
-    if (_reminderTimeout) clearTimeout(_reminderTimeout);
-    const [h, m] = timeStr.split(':').map(Number);
-    const now  = new Date();
-    const fire = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
-    if (fire <= now) fire.setDate(fire.getDate() + 1); // next day if past
-    const ms = fire - now;
-    _reminderTimeout = setTimeout(() => {
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('📚 MedStudies — Hora de estudar!', {
-          body: 'Seu lembrete diário chegou. Abra o plano e bora!',
-          icon: '/favicon.ico',
-        });
-      }
-      scheduleReminder(timeStr); // reschedule for next day
-    }, ms);
-  }
+  // scheduleReminder(timeStr) is handled by the async version above (9814)
 
   function initReminder() {
     const saved = localStorage.getItem('daily_reminder');

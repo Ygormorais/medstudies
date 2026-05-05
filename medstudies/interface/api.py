@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from sqlalchemy import func
 from medstudies.persistence.database import get_session, init_db
-from medstudies.persistence.models import DailyPlan, FlashCard, Question, StudySession, Subject, Tag, Topic, TopicReview
+from medstudies.persistence.models import DailyPlan, FlashCard, LibraryItem, Question, StudySession, Subject, Tag, Topic, TopicReview
 from medstudies.engine.planner import DailyPlanBuilder, DailyStudyPlan
 from medstudies.engine.scorer import TopicScorer
 from medstudies.engine.weekly_planner import WeeklyPlanBuilder
@@ -3245,3 +3245,206 @@ async def restore_db(file: UploadFile = File(...)):
     with open(db_path, "wb") as f:
         f.write(content)
     return {"ok": True, "size_kb": round(len(content) / 1024, 1)}
+
+
+# ── Biblioteca ────────────────────────────────────────────────────────────────
+
+LIBRARY_DIR = Path(os.environ.get("MEDSTUDIES_DB", "data/medstudies.db")).parent / "library"
+LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+
+ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mp3", ".txt", ".md"}
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
+
+
+class LibraryItemCreate(BaseModel):
+    title: str
+    item_type: str          # pdf | link | note | video
+    description: str | None = None
+    url: str | None = None
+    content: str | None = None
+    subject_id: int | None = None
+    topic_id: int | None = None
+    tags: str | None = None
+    source: str | None = None
+    year: int | None = None
+
+
+@app.get("/api/library")
+def library_list(
+    item_type: str | None = None,
+    subject_id: int | None = None,
+    topic_id: int | None = None,
+    favorite: bool | None = None,
+    q: str | None = None,
+    limit: int = 200,
+):
+    with get_session() as db:
+        items = db.query(LibraryItem).order_by(LibraryItem.created_at.desc())
+        if item_type:
+            items = items.filter(LibraryItem.item_type == item_type)
+        if subject_id:
+            items = items.filter(LibraryItem.subject_id == subject_id)
+        if topic_id:
+            items = items.filter(LibraryItem.topic_id == topic_id)
+        if favorite is True:
+            items = items.filter(LibraryItem.is_favorite == True)
+        items = items.limit(limit).all()
+
+        if q:
+            q_low = q.lower()
+            items = [i for i in items if q_low in (i.title or "").lower()
+                     or q_low in (i.description or "").lower()
+                     or q_low in (i.tags or "").lower()]
+
+        def _subject_name(item):
+            if item.subject_id:
+                s = db.query(Subject).get(item.subject_id)
+                return s.name if s else None
+            return None
+
+        return [
+            {
+                "id": i.id,
+                "title": i.title,
+                "item_type": i.item_type,
+                "description": i.description,
+                "url": i.url,
+                "content": i.content,
+                "file_path": i.file_path,
+                "file_size": i.file_size,
+                "subject_id": i.subject_id,
+                "subject_name": _subject_name(i),
+                "topic_id": i.topic_id,
+                "tags": i.tags,
+                "source": i.source,
+                "year": i.year,
+                "is_favorite": i.is_favorite,
+                "created_at": i.created_at.isoformat() if i.created_at else None,
+            }
+            for i in items
+        ]
+
+
+@app.post("/api/library")
+def library_create(body: LibraryItemCreate):
+    with get_session() as db:
+        item = LibraryItem(**body.model_dump())
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        return {"id": item.id}
+
+
+@app.post("/api/library/upload")
+async def library_upload(
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    description: str = Form(""),
+    subject_id: str = Form(""),
+    topic_id: str = Form(""),
+    tags: str = Form(""),
+    source: str = Form(""),
+    year: str = Form(""),
+):
+    suffix = Path(file.filename or "file").suffix.lower()
+    if suffix not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Extensão não permitida: {suffix}")
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Arquivo muito grande (max 100 MB)")
+
+    # save to disk
+    import uuid
+    fname = f"{uuid.uuid4().hex}{suffix}"
+    fpath = LIBRARY_DIR / fname
+    fpath.write_bytes(content)
+
+    item_type = "pdf" if suffix == ".pdf" else (
+        "video" if suffix in {".mp4"} else
+        "note" if suffix in {".txt", ".md"} else "pdf"
+    )
+
+    with get_session() as db:
+        item = LibraryItem(
+            title=title,
+            item_type=item_type,
+            description=description or None,
+            file_path=fname,
+            file_size=len(content),
+            subject_id=int(subject_id) if subject_id.isdigit() else None,
+            topic_id=int(topic_id) if topic_id.isdigit() else None,
+            tags=tags or None,
+            source=source or None,
+            year=int(year) if year.isdigit() else None,
+        )
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        return {"id": item.id, "file_path": fname, "size_bytes": len(content)}
+
+
+@app.get("/api/library/{item_id}/file")
+def library_serve_file(item_id: int):
+    with get_session() as db:
+        item = db.query(LibraryItem).get(item_id)
+        if not item or not item.file_path:
+            raise HTTPException(status_code=404)
+        fpath = LIBRARY_DIR / item.file_path
+        if not fpath.exists():
+            raise HTTPException(status_code=404, detail="Arquivo não encontrado no disco")
+        suffix = fpath.suffix.lower()
+        media_types = {
+            ".pdf": "application/pdf",
+            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".gif": "image/gif", ".webp": "image/webp",
+            ".mp4": "video/mp4", ".mp3": "audio/mpeg",
+            ".txt": "text/plain", ".md": "text/markdown",
+        }
+        return FileResponse(str(fpath), media_type=media_types.get(suffix, "application/octet-stream"),
+                            filename=item.title + suffix)
+
+
+@app.patch("/api/library/{item_id}")
+def library_update(item_id: int, body: dict):
+    with get_session() as db:
+        item = db.query(LibraryItem).get(item_id)
+        if not item:
+            raise HTTPException(status_code=404)
+        allowed = {"title", "description", "url", "content", "subject_id", "topic_id",
+                   "tags", "source", "year", "is_favorite"}
+        for k, v in body.items():
+            if k in allowed:
+                setattr(item, k, v)
+        db.commit()
+        return {"ok": True}
+
+
+@app.delete("/api/library/{item_id}")
+def library_delete(item_id: int):
+    with get_session() as db:
+        item = db.query(LibraryItem).get(item_id)
+        if not item:
+            raise HTTPException(status_code=404)
+        # delete file from disk if exists
+        if item.file_path:
+            fpath = LIBRARY_DIR / item.file_path
+            if fpath.exists():
+                fpath.unlink()
+        db.delete(item)
+        db.commit()
+        return {"ok": True}
+
+
+@app.get("/api/library/stats")
+def library_stats():
+    with get_session() as db:
+        from sqlalchemy import func as sqlfunc
+        rows = db.query(LibraryItem.item_type, sqlfunc.count(LibraryItem.id))\
+                 .group_by(LibraryItem.item_type).all()
+        total_size = db.query(sqlfunc.sum(LibraryItem.file_size)).scalar() or 0
+        return {
+            "by_type": {r[0]: r[1] for r in rows},
+            "total": sum(r[1] for r in rows),
+            "total_size_mb": round(total_size / 1024 / 1024, 1),
+        }

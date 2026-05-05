@@ -212,3 +212,46 @@ class DailyPlan(Base):
     __table_args__ = (
         Index("ix_daily_plans_plan_date", "plan_date"),
     )
+
+
+class LibraryItem(Base):
+    """
+    Biblioteca de materiais de estudo.
+    Supports PDFs (stored on disk), links, and text notes.
+    """
+    __tablename__ = "library_items"
+
+    id          = Column(Integer, primary_key=True)
+    title       = Column(String(300), nullable=False)
+    item_type   = Column(String(20), nullable=False)   # pdf | link | note | video
+    description = Column(Text, nullable=True)
+
+    # for pdf / file uploads — relative path inside data/library/
+    file_path   = Column(String(500), nullable=True)
+    file_size   = Column(Integer, nullable=True)       # bytes
+
+    # for links / videos
+    url         = Column(String(1000), nullable=True)
+
+    # for text notes
+    content     = Column(Text, nullable=True)
+
+    # optional taxonomy
+    subject_id  = Column(Integer, ForeignKey("subjects.id"), nullable=True)
+    topic_id    = Column(Integer, ForeignKey("topics.id"),   nullable=True)
+    tags        = Column(String(500), nullable=True)   # comma-separated free tags
+
+    # metadata
+    source      = Column(String(200), nullable=True)   # e.g. "USP 2024", "PubMed"
+    year        = Column(Integer, nullable=True)
+    is_favorite = Column(Boolean, default=False)
+    created_at  = Column(DateTime, default=datetime.utcnow)
+
+    subject = relationship("Subject")
+    topic   = relationship("Topic")
+
+    __table_args__ = (
+        Index("ix_library_subject_id", "subject_id"),
+        Index("ix_library_item_type",  "item_type"),
+        Index("ix_library_created_at", "created_at"),
+    )

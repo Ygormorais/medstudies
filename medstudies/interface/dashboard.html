@@ -814,6 +814,17 @@
     .fc-btn-row { display:flex;gap:10px;justify-content:center;margin-top:10px; }
     .fc-btn { padding:9px 22px;border-radius:10px;border:none;cursor:pointer;font-size:13px;font-weight:700; }
     .fc-list-item { display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border); }
+    /* ── Biblioteca ── */
+    .bib-card { background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;display:flex;flex-direction:column;gap:8px;cursor:pointer;transition:box-shadow .15s,transform .15s;position:relative; }
+    .bib-card:hover { box-shadow:0 6px 24px rgba(0,0,0,.18);transform:translateY(-2px); }
+    .bib-type-icon { font-size:28px;line-height:1; }
+    .bib-type-badge { font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px; }
+    .bib-badge-pdf   { background:#FEE2E2;color:#991B1B; }
+    .bib-badge-link  { background:#DBEAFE;color:#1E40AF; }
+    .bib-badge-video { background:#F3E8FF;color:#6B21A8; }
+    .bib-badge-note  { background:#D1FAE5;color:#065F46; }
+    .bib-type-tab { padding:7px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg);color:var(--sub);cursor:pointer;font-size:12px;font-weight:600;transition:all .15s; }
+    .bib-type-tab.active { background:var(--red);color:#fff;border-color:var(--red); }
     .fc-q { font-size:13px;font-weight:700;flex:1 }
     .fc-a { font-size:12px;color:var(--sub);margin-top:2px; }
     /* ── Quick Review overlay ── */
@@ -1672,6 +1683,7 @@
   <div class="sidebar-icon" id="nav-search-page" title="Busca Global (Ctrl+Shift+F)" onclick="navTo('page-search-page','nav-search-page')">🔍<span class="sidebar-lbl">Busca</span></div>
   <div class="sidebar-icon" id="nav-pomo" title="Pomodoro (Ctrl+Shift+T)" onclick="const w=document.getElementById('pomo-widget');if(w&&w.style.display!=='none')closePomo();else openPomo()">🍅<span class="sidebar-lbl">Pomo</span></div>
   <div class="sidebar-icon" id="nav-news" title="Notícias Médicas (PubMed)" onclick="navTo('page-news','nav-news')">📰<span class="sidebar-lbl">Notícias</span></div>
+  <div class="sidebar-icon" id="nav-biblioteca" title="Biblioteca (b)" onclick="navTo('page-biblioteca','nav-biblioteca');loadBiblioteca()">📚<span class="sidebar-lbl">Biblioteca</span></div>
   <div class="sidebar-icon" id="nav-config" title="Configurações" onclick="navTo('page-config','nav-config')">⚙️<span class="sidebar-lbl">Config</span></div>
 </nav>
 
@@ -2975,6 +2987,141 @@
       </div>
     </div>
   </div><!-- end page-config -->
+
+  <!-- ── Biblioteca ─────────────────────────────────────────────────────── -->
+  <div class="page" id="page-biblioteca">
+    <div class="content">
+      <div class="col-main">
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+          <div>
+            <h2 style="font-size:20px;font-weight:900;margin-bottom:2px">📚 Biblioteca</h2>
+            <div style="font-size:13px;color:var(--sub)" id="bib-summary">Acervo de materiais médicos</div>
+          </div>
+          <button onclick="openBibAddModal()" style="padding:9px 18px;border-radius:10px;border:none;background:var(--red);color:#fff;font-weight:700;font-size:13px;cursor:pointer">+ Adicionar</button>
+        </div>
+
+        <!-- Filters -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
+          <input id="bib-search" type="search" placeholder="🔍 Buscar título, tags..." oninput="filterBiblioteca()"
+            style="flex:1;min-width:160px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+          <select id="bib-type-filter" onchange="filterBiblioteca()"
+            style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+            <option value="">Todos os tipos</option>
+            <option value="pdf">📄 PDF</option>
+            <option value="link">🔗 Link</option>
+            <option value="video">🎬 Vídeo</option>
+            <option value="note">📝 Nota</option>
+          </select>
+          <select id="bib-subject-filter" onchange="filterBiblioteca()"
+            style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+            <option value="">Todas as matérias</option>
+          </select>
+          <button onclick="filterBibliotecaFav()" id="bib-fav-btn"
+            style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg);color:var(--sub);font-size:13px;cursor:pointer">⭐ Favoritos</button>
+        </div>
+
+        <!-- Grid -->
+        <div id="bib-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+          <div class="empty"><span class="spinner"></span> Carregando...</div>
+        </div>
+      </div>
+
+      <div class="col-side">
+        <!-- Stats -->
+        <div style="background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;margin-bottom:16px">
+          <div style="font-size:13px;font-weight:800;margin-bottom:14px">📊 Acervo</div>
+          <div id="bib-stats" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+        <!-- Quick add link -->
+        <div style="background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px">
+          <div style="font-size:13px;font-weight:800;margin-bottom:10px">⚡ Adicionar rápido</div>
+          <div style="font-size:12px;color:var(--sub);margin-bottom:10px">Cole um link e salve direto:</div>
+          <input id="bib-quick-url" type="url" placeholder="https://..." style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;box-sizing:border-box;margin-bottom:8px">
+          <input id="bib-quick-title" type="text" placeholder="Título (opcional)" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;box-sizing:border-box;margin-bottom:8px">
+          <button onclick="bibQuickAddLink()" style="width:100%;padding:8px;border-radius:8px;border:none;background:var(--red);color:#fff;font-weight:700;font-size:12px;cursor:pointer">Salvar link</button>
+        </div>
+      </div>
+    </div>
+  </div><!-- end page-biblioteca -->
+
+  <!-- Biblioteca: Add/Edit Modal -->
+  <div id="bib-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1400;align-items:center;justify-content:center;backdrop-filter:blur(4px)" onclick="if(event.target===this)closeBibModal()">
+    <div style="background:var(--card);border-radius:20px;padding:28px;width:min(580px,96vw);max-height:88vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.3)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="font-size:16px;font-weight:900" id="bib-modal-title">Adicionar Material</div>
+        <button onclick="closeBibModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub)">✕</button>
+      </div>
+
+      <!-- Type tabs -->
+      <div style="display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap">
+        <button class="bib-type-tab active" onclick="setBibType('pdf')"   data-type="pdf">📄 PDF/Arquivo</button>
+        <button class="bib-type-tab"        onclick="setBibType('link')"  data-type="link">🔗 Link</button>
+        <button class="bib-type-tab"        onclick="setBibType('video')" data-type="video">🎬 Vídeo</button>
+        <button class="bib-type-tab"        onclick="setBibType('note')"  data-type="note">📝 Nota</button>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <input id="bib-f-title" type="text" placeholder="Título *" style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;width:100%;box-sizing:border-box">
+
+        <!-- File upload (pdf) -->
+        <div id="bib-file-section">
+          <label style="font-size:12px;color:var(--sub);font-weight:600;display:block;margin-bottom:4px">Arquivo (PDF, imagem, etc.)</label>
+          <input id="bib-f-file" type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.mp4,.mp3,.txt,.md"
+            style="font-size:12px;color:var(--text)">
+          <div id="bib-upload-progress" style="display:none;margin-top:6px">
+            <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+              <div id="bib-upload-bar" style="height:100%;width:0%;background:var(--red);transition:width .3s"></div>
+            </div>
+            <div id="bib-upload-label" style="font-size:11px;color:var(--sub);margin-top:3px">Enviando...</div>
+          </div>
+        </div>
+
+        <!-- URL (link/video) -->
+        <div id="bib-url-section" style="display:none">
+          <input id="bib-f-url" type="url" placeholder="URL *" style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;width:100%;box-sizing:border-box">
+        </div>
+
+        <!-- Note content -->
+        <div id="bib-note-section" style="display:none">
+          <textarea id="bib-f-content" placeholder="Conteúdo da nota..." rows="6"
+            style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;width:100%;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
+        </div>
+
+        <textarea id="bib-f-desc" placeholder="Descrição / resumo (opcional)" rows="2"
+          style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;width:100%;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <select id="bib-f-subject" style="flex:1;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+            <option value="">Matéria (opcional)</option>
+          </select>
+          <input id="bib-f-source" type="text" placeholder="Fonte (ex: USP 2024)" style="flex:1;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+          <input id="bib-f-year" type="number" placeholder="Ano" min="2000" max="2030" style="width:80px;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+        </div>
+        <input id="bib-f-tags" type="text" placeholder="Tags (separadas por vírgula)" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;width:100%;box-sizing:border-box">
+      </div>
+
+      <input type="hidden" id="bib-f-type" value="pdf">
+      <input type="hidden" id="bib-f-id" value="">
+
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end">
+        <button onclick="closeBibModal()" style="padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-weight:600">Cancelar</button>
+        <button onclick="saveBibItem()" style="padding:10px 24px;border-radius:10px;border:none;background:var(--red);color:#fff;cursor:pointer;font-weight:700">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Biblioteca: PDF Preview Modal -->
+  <div id="bib-preview-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1500;flex-direction:column" onclick="if(event.target===this)closeBibPreview()">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:rgba(0,0,0,.5)">
+      <div id="bib-preview-title" style="color:#fff;font-weight:700;font-size:15px"></div>
+      <div style="display:flex;gap:10px">
+        <a id="bib-preview-download" href="#" download style="color:#fff;font-size:12px;text-decoration:none;padding:6px 12px;border-radius:6px;background:rgba(255,255,255,.15)">⬇ Baixar</a>
+        <button onclick="closeBibPreview()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">✕</button>
+      </div>
+    </div>
+    <iframe id="bib-preview-frame" src="" style="flex:1;border:none;width:100%"></iframe>
+  </div>
 
   <!-- page: Simulado -->
   <div class="page" id="page-simulado">
@@ -6615,6 +6762,7 @@ ${(plan.items || []).map((item, i) => `<tr>
       'f': ['page-agenda',      'nav-agenda'],
       'w': ['page-report',      'nav-report'],
       'n': ['page-news',        'nav-news'],
+      'b': ['page-biblioteca',  'nav-biblioteca'],
       ',': ['page-config',      'nav-config'],
     };
     let _gPressed = false;
@@ -10306,6 +10454,320 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
       }
     }, { passive: true });
   })();
+
+  // ── Biblioteca ────────────────────────────────────────────────────────────────
+  let _bibItems = [], _bibFavOnly = false, _bibEditId = null, _bibCurrentType = 'pdf';
+
+  async function loadBiblioteca() {
+    const grid = document.getElementById('bib-grid');
+    if (!grid) return;
+    grid.innerHTML = '<div class="empty"><span class="spinner"></span> Carregando...</div>';
+    try {
+      const [items, stats, subjects] = await Promise.all([
+        fetchJSON('/api/library'),
+        fetchJSON('/api/library/stats').catch(() => ({})),
+        fetchJSON('/api/subjects'),
+      ]);
+      _bibItems = items;
+      renderBibGrid(items);
+      renderBibStats(stats);
+      populateBibSubjectFilter(subjects);
+    } catch(e) {
+      grid.innerHTML = `<div class="empty">Erro: ${e.message}</div>`;
+    }
+  }
+
+  function renderBibGrid(items) {
+    const grid = document.getElementById('bib-grid');
+    if (!grid) return;
+    const summary = document.getElementById('bib-summary');
+    if (summary) summary.textContent = `${items.length} item${items.length !== 1 ? 's' : ''} no acervo`;
+    if (!items.length) {
+      grid.innerHTML = `<div class="empty" style="grid-column:1/-1;padding:40px 0;text-align:center">
+        <div style="font-size:40px;margin-bottom:12px">📚</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:6px">Biblioteca vazia</div>
+        <div style="font-size:13px;color:var(--sub);margin-bottom:16px">Adicione PDFs, links, vídeos ou notas de estudo</div>
+        <button onclick="openBibAddModal()" style="padding:10px 20px;border-radius:10px;border:none;background:var(--red);color:#fff;font-weight:700;cursor:pointer">+ Adicionar primeiro material</button>
+      </div>`;
+      return;
+    }
+    const TYPE_ICON = { pdf:'📄', link:'🔗', video:'🎬', note:'📝' };
+    grid.innerHTML = items.map(item => {
+      const icon = TYPE_ICON[item.item_type] || '📄';
+      const badge = `<span class="bib-type-badge bib-badge-${item.item_type}">${item.item_type}</span>`;
+      const tags = item.tags ? item.tags.split(',').map(t => `<span style="font-size:10px;background:var(--border);border-radius:4px;padding:1px 6px">${t.trim()}</span>`).join(' ') : '';
+      const sizeTxt = item.file_size ? ` · ${(item.file_size/1024/1024).toFixed(1)} MB` : '';
+      const subjectTxt = item.subject_name ? `<span style="font-size:11px;color:var(--red);font-weight:700">${item.subject_name}</span> · ` : '';
+      const favIcon = item.is_favorite ? '⭐' : '☆';
+      return `<div class="bib-card" onclick="openBibItem(${item.id})">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+          <div style="font-size:28px;line-height:1.1">${icon}</div>
+          <div style="display:flex;gap:4px;align-items:center">
+            ${badge}
+            <button onclick="event.stopPropagation();bibToggleFav(${item.id})" style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px" title="Favorito">${favIcon}</button>
+            <button onclick="event.stopPropagation();deleteBibItem(${item.id})" style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--sub);padding:2px" title="Remover">🗑</button>
+          </div>
+        </div>
+        <div style="font-size:14px;font-weight:800;line-height:1.3;margin-top:4px">${item.title}</div>
+        ${item.description ? `<div style="font-size:12px;color:var(--sub);line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${item.description}</div>` : ''}
+        <div style="font-size:11px;color:var(--sub);margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+          ${subjectTxt}${item.source || ''}${sizeTxt}
+        </div>
+        ${tags ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${tags}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function renderBibStats(stats) {
+    const el = document.getElementById('bib-stats');
+    if (!el) return;
+    const TYPE_LABEL = { pdf:'PDFs', link:'Links', video:'Vídeos', note:'Notas' };
+    const TYPE_COLOR = { pdf:'#E8362A', link:'#2979E0', video:'#8B5CF6', note:'#22C55E' };
+    const byType = stats.by_type || {};
+    const total = stats.total || 0;
+    const sizeMb = stats.total_size_mb || 0;
+    el.innerHTML = `
+      ${Object.entries(byType).map(([type, count]) => `
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:var(--text)">${TYPE_LABEL[type] || type}</span>
+          <span style="font-size:13px;font-weight:800;color:${TYPE_COLOR[type] || 'var(--text)'}">${count}</span>
+        </div>`).join('')}
+      <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px;display:flex;justify-content:space-between">
+        <span style="font-size:12px;font-weight:700">Total</span>
+        <span style="font-size:13px;font-weight:900">${total}</span>
+      </div>
+      ${sizeMb > 0 ? `<div style="font-size:11px;color:var(--sub)">${sizeMb} MB em disco</div>` : ''}`;
+  }
+
+  function populateBibSubjectFilter(subjects) {
+    const sel = document.getElementById('bib-subject-filter');
+    const selModal = document.getElementById('bib-f-subject');
+    if (!sel) return;
+    const opts = subjects.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    sel.innerHTML = '<option value="">Todas as matérias</option>' + opts;
+    if (selModal) selModal.innerHTML = '<option value="">Matéria (opcional)</option>' + opts;
+  }
+
+  function filterBiblioteca() {
+    const q = (document.getElementById('bib-search')?.value || '').toLowerCase();
+    const type = document.getElementById('bib-type-filter')?.value || '';
+    const subjectId = document.getElementById('bib-subject-filter')?.value || '';
+    let filtered = _bibItems;
+    if (_bibFavOnly) filtered = filtered.filter(i => i.is_favorite);
+    if (type) filtered = filtered.filter(i => i.item_type === type);
+    if (subjectId) filtered = filtered.filter(i => String(i.subject_id) === subjectId);
+    if (q) filtered = filtered.filter(i =>
+      (i.title||'').toLowerCase().includes(q) ||
+      (i.description||'').toLowerCase().includes(q) ||
+      (i.tags||'').toLowerCase().includes(q)
+    );
+    renderBibGrid(filtered);
+  }
+
+  function filterBibliotecaFav() {
+    _bibFavOnly = !_bibFavOnly;
+    const btn = document.getElementById('bib-fav-btn');
+    if (btn) { btn.style.background = _bibFavOnly ? '#F59E0B' : 'var(--bg)'; btn.style.color = _bibFavOnly ? '#fff' : 'var(--sub)'; }
+    filterBiblioteca();
+  }
+
+  function openBibItem(id) {
+    const item = _bibItems.find(i => i.id === id);
+    if (!item) return;
+    if (item.item_type === 'pdf' && item.file_path) {
+      // PDF preview inline
+      const modal = document.getElementById('bib-preview-modal');
+      document.getElementById('bib-preview-title').textContent = item.title;
+      document.getElementById('bib-preview-frame').src = `/api/library/${id}/file`;
+      document.getElementById('bib-preview-download').href = `/api/library/${id}/file`;
+      document.getElementById('bib-preview-download').download = item.title;
+      modal.style.display = 'flex';
+    } else if (item.url) {
+      window.open(item.url, '_blank');
+    } else if (item.item_type === 'note') {
+      openBibEditModal(item);
+    } else if (item.file_path) {
+      window.open(`/api/library/${id}/file`, '_blank');
+    }
+  }
+
+  function closeBibPreview() {
+    const modal = document.getElementById('bib-preview-modal');
+    if (modal) { modal.style.display = 'none'; document.getElementById('bib-preview-frame').src = ''; }
+  }
+
+  function openBibAddModal() {
+    _bibEditId = null;
+    document.getElementById('bib-modal-title').textContent = 'Adicionar Material';
+    document.getElementById('bib-f-title').value = '';
+    document.getElementById('bib-f-desc').value = '';
+    document.getElementById('bib-f-url').value = '';
+    document.getElementById('bib-f-content').value = '';
+    document.getElementById('bib-f-tags').value = '';
+    document.getElementById('bib-f-source').value = '';
+    document.getElementById('bib-f-year').value = '';
+    document.getElementById('bib-f-subject').value = '';
+    document.getElementById('bib-f-id').value = '';
+    setBibType('pdf');
+    document.getElementById('bib-modal').style.display = 'flex';
+  }
+
+  function openBibEditModal(item) {
+    _bibEditId = item.id;
+    document.getElementById('bib-modal-title').textContent = 'Editar Material';
+    document.getElementById('bib-f-title').value = item.title || '';
+    document.getElementById('bib-f-desc').value = item.description || '';
+    document.getElementById('bib-f-url').value = item.url || '';
+    document.getElementById('bib-f-content').value = item.content || '';
+    document.getElementById('bib-f-tags').value = item.tags || '';
+    document.getElementById('bib-f-source').value = item.source || '';
+    document.getElementById('bib-f-year').value = item.year || '';
+    document.getElementById('bib-f-subject').value = item.subject_id || '';
+    document.getElementById('bib-f-id').value = item.id;
+    setBibType(item.item_type || 'pdf');
+    document.getElementById('bib-file-section').style.display = 'none'; // editing: hide file
+    document.getElementById('bib-modal').style.display = 'flex';
+  }
+
+  function closeBibModal() {
+    document.getElementById('bib-modal').style.display = 'none';
+  }
+
+  function setBibType(type) {
+    _bibCurrentType = type;
+    document.getElementById('bib-f-type').value = type;
+    document.querySelectorAll('.bib-type-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.type === type);
+    });
+    document.getElementById('bib-file-section').style.display = type === 'pdf' ? 'block' : 'none';
+    document.getElementById('bib-url-section').style.display = (type === 'link' || type === 'video') ? 'block' : 'none';
+    document.getElementById('bib-note-section').style.display = type === 'note' ? 'block' : 'none';
+  }
+
+  async function saveBibItem() {
+    const title = document.getElementById('bib-f-title').value.trim();
+    if (!title) { toast('Título obrigatório', 'error'); return; }
+    const type = document.getElementById('bib-f-type').value;
+    const editId = document.getElementById('bib-f-id').value;
+    const fileInput = document.getElementById('bib-f-file');
+    const hasFile = fileInput && fileInput.files.length > 0;
+
+    try {
+      if (editId) {
+        // PATCH existing
+        await fetchJSON(`/api/library/${editId}`, {
+          method: 'PATCH',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            title,
+            description: document.getElementById('bib-f-desc').value || null,
+            url: document.getElementById('bib-f-url').value || null,
+            content: document.getElementById('bib-f-content').value || null,
+            subject_id: parseInt(document.getElementById('bib-f-subject').value) || null,
+            tags: document.getElementById('bib-f-tags').value || null,
+            source: document.getElementById('bib-f-source').value || null,
+            year: parseInt(document.getElementById('bib-f-year').value) || null,
+          }),
+        });
+        toast('✅ Material atualizado');
+      } else if (type === 'pdf' && hasFile) {
+        // multipart upload
+        const form = new FormData();
+        form.append('file', fileInput.files[0]);
+        form.append('title', title);
+        form.append('description', document.getElementById('bib-f-desc').value || '');
+        form.append('subject_id', document.getElementById('bib-f-subject').value || '');
+        form.append('topic_id', '');
+        form.append('tags', document.getElementById('bib-f-tags').value || '');
+        form.append('source', document.getElementById('bib-f-source').value || '');
+        form.append('year', document.getElementById('bib-f-year').value || '');
+        // show progress
+        document.getElementById('bib-upload-progress').style.display = 'block';
+        const xhr = new XMLHttpRequest();
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) {
+            const pct = Math.round(e.loaded / e.total * 100);
+            document.getElementById('bib-upload-bar').style.width = pct + '%';
+            document.getElementById('bib-upload-label').textContent = `Enviando ${pct}%...`;
+          }
+        };
+        await new Promise((res, rej) => {
+          xhr.onload = () => { if (xhr.status >= 200 && xhr.status < 300) res(); else rej(new Error(xhr.responseText)); };
+          xhr.onerror = () => rej(new Error('Erro de rede'));
+          xhr.open('POST', '/api/library/upload');
+          xhr.send(form);
+        });
+        toast('✅ Arquivo enviado!');
+      } else {
+        // JSON create (link, note, video)
+        await fetchJSON('/api/library', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            title,
+            item_type: type,
+            description: document.getElementById('bib-f-desc').value || null,
+            url: document.getElementById('bib-f-url').value || null,
+            content: document.getElementById('bib-f-content').value || null,
+            subject_id: parseInt(document.getElementById('bib-f-subject').value) || null,
+            tags: document.getElementById('bib-f-tags').value || null,
+            source: document.getElementById('bib-f-source').value || null,
+            year: parseInt(document.getElementById('bib-f-year').value) || null,
+          }),
+        });
+        toast('✅ Material adicionado');
+      }
+      closeBibModal();
+      _invalidateCache('/api/library');
+      loadBiblioteca();
+    } catch(e) {
+      document.getElementById('bib-upload-progress').style.display = 'none';
+      toast('Erro: ' + e.message, 'error');
+    }
+  }
+
+  async function bibToggleFav(id) {
+    const item = _bibItems.find(i => i.id === id);
+    if (!item) return;
+    await fetchJSON(`/api/library/${id}`, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ is_favorite: !item.is_favorite }),
+    });
+    _invalidateCache('/api/library');
+    loadBiblioteca();
+  }
+
+  async function deleteBibItem(id) {
+    const item = _bibItems.find(i => i.id === id);
+    if (!item) return;
+    if (!confirm(`Remover "${item.title}"?`)) return;
+    await fetchJSON(`/api/library/${id}`, { method: 'DELETE' });
+    _invalidateCache('/api/library');
+    toast('Removido');
+    loadBiblioteca();
+  }
+
+  async function bibQuickAddLink() {
+    const url = document.getElementById('bib-quick-url')?.value.trim();
+    if (!url) { toast('URL obrigatória', 'error'); return; }
+    const raw = document.getElementById('bib-quick-title')?.value.trim();
+    const isYt = url.includes('youtube.com') || url.includes('youtu.be');
+    const type = isYt ? 'video' : 'link';
+    const title = raw || (isYt ? '🎬 Vídeo YouTube' : url.replace(/^https?:\/\//, '').split('/')[0]);
+    try {
+      await fetchJSON('/api/library', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ title, item_type: type, url }),
+      });
+      document.getElementById('bib-quick-url').value = '';
+      document.getElementById('bib-quick-title').value = '';
+      toast('✅ Link salvo!');
+      _invalidateCache('/api/library');
+      loadBiblioteca();
+    } catch(e) { toast('Erro: ' + e.message, 'error'); }
+  }
 
   // ── Donut Chart — Questões por Matéria ──────────────────────────────────────
   let _donutChart = null;

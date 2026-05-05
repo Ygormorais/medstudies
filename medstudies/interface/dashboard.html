@@ -3231,6 +3231,8 @@
             <select id="banco-subject-filter" onchange="loadBanco()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
               <option value="">Todas as matérias</option>
             </select>
+            <button onclick="openBancoImport()" style="padding:8px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-weight:700;font-size:13px;cursor:pointer">📥 CSV</button>
+            <button onclick="openRevisaoErros()" style="padding:8px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg);color:var(--red);font-weight:700;font-size:13px;cursor:pointer">❌ Erros</button>
             <button onclick="openAddQBModal()" style="padding:8px 16px;border-radius:8px;border:none;background:var(--red);color:#fff;font-weight:700;font-size:13px;cursor:pointer">+ Questão</button>
           </div>
         </div>
@@ -3292,6 +3294,49 @@
       <div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end">
         <button onclick="closeAddQBModal()" style="padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-weight:600">Cancelar</button>
         <button onclick="saveQBQuestion()" style="padding:10px 24px;border-radius:10px;border:none;background:var(--red);color:#fff;cursor:pointer;font-weight:700">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Banco: CSV Import modal -->
+  <div id="banco-import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1400;align-items:center;justify-content:center;backdrop-filter:blur(4px)" onclick="if(event.target===this)closeBancoImport()">
+    <div style="background:var(--card);border-radius:20px;padding:28px;width:min(580px,96vw);max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.3)">
+      <div style="font-size:16px;font-weight:900;margin-bottom:4px">📥 Importar Questões via CSV</div>
+      <div style="font-size:12px;color:var(--sub);margin-bottom:18px">Adicione centenas de questões de uma vez</div>
+      <div style="background:var(--bg);border-radius:10px;padding:14px;font-size:12px;color:var(--sub);margin-bottom:16px;border:1px solid var(--border)">
+        <div style="font-weight:800;margin-bottom:6px">Colunas obrigatórias:</div>
+        <code style="font-size:11px">topic_name, statement, alt_a, alt_b, correct_alt</code>
+        <div style="font-weight:800;margin:8px 0 4px">Colunas opcionais:</div>
+        <code style="font-size:11px">subject_name, alt_c, alt_d, alt_e, explanation, source, year, difficulty</code>
+        <div style="margin-top:8px"><strong>correct_alt</strong> = A, B, C, D ou E &nbsp;|&nbsp; <strong>difficulty</strong> = facil, medio, dificil</div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;font-weight:700;display:block;margin-bottom:6px">Arquivo CSV</label>
+        <input type="file" id="banco-csv-file" accept=".csv" style="font-size:13px;width:100%">
+      </div>
+      <div id="banco-import-result" style="min-height:20px;font-size:12px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap">
+        <button onclick="downloadBancoTemplate()" style="font-size:12px;padding:7px 14px;border-radius:8px;border:1.5px solid var(--border);background:transparent;cursor:pointer;color:var(--sub)">📄 Baixar modelo CSV</button>
+        <div style="display:flex;gap:8px">
+          <button onclick="closeBancoImport()" style="padding:10px 18px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-weight:600">Cancelar</button>
+          <button onclick="submitBancoCSV()" id="banco-import-btn" style="padding:10px 22px;border-radius:10px;border:none;background:var(--red);color:#fff;cursor:pointer;font-weight:700">Importar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Banco: Revisão de Erros modal -->
+  <div id="banco-erros-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1400;align-items:center;justify-content:center;backdrop-filter:blur(4px)" onclick="if(event.target===this)closeRevisaoErros()">
+    <div style="background:var(--card);border-radius:20px;padding:28px;width:min(680px,96vw);max-height:92vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.3)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div>
+          <div style="font-size:16px;font-weight:900">❌ Revisão de Erros</div>
+          <div style="font-size:12px;color:var(--sub);margin-top:2px">Questões respondidas errado — revise o gabarito</div>
+        </div>
+        <button onclick="closeRevisaoErros()" style="font-size:20px;background:none;border:none;cursor:pointer;color:var(--sub)">✕</button>
+      </div>
+      <div id="banco-erros-list" style="display:flex;flex-direction:column;gap:12px">
+        <div class="empty"><span class="spinner"></span> Carregando...</div>
       </div>
     </div>
   </div>
@@ -11425,6 +11470,94 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
       _invalidateCache('/api/questions');
       loadBanco();
     } catch(e) { toast('Erro: ' + e.message, 'error'); }
+  }
+
+  // ── Banco CSV Import ─────────────────────────────────────────────────────────
+  function openBancoImport() {
+    const m = document.getElementById('banco-import-modal');
+    m.style.display = 'flex';
+    document.getElementById('banco-import-result').innerHTML = '';
+    document.getElementById('banco-csv-file').value = '';
+  }
+  function closeBancoImport() { document.getElementById('banco-import-modal').style.display = 'none'; }
+
+  async function submitBancoCSV() {
+    const file = document.getElementById('banco-csv-file').files[0];
+    if (!file) { toast('Selecione um arquivo CSV', 'error'); return; }
+    const btn = document.getElementById('banco-import-btn');
+    btn.disabled = true; btn.textContent = '⏳ Importando...';
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetchJSON('/api/questions/bank/import-csv', { method: 'POST', body: fd });
+      const errHtml = res.errors?.length
+        ? `<div style="margin-top:8px;color:var(--red);font-size:11px">${res.errors.slice(0,5).map(e => `• ${escHtml(e)}`).join('<br>')}${res.errors.length>5?`<br>… +${res.errors.length-5} mais`:''}</div>`
+        : '';
+      document.getElementById('banco-import-result').innerHTML =
+        `<div style="color:var(--green);font-weight:700">✅ ${res.imported} questões importadas${res.skipped ? `, ${res.skipped} ignoradas` : ''}</div>${errHtml}`;
+      if (res.imported > 0) { loadBanco(); _invalidateCache('/api/questions'); }
+    } catch(e) {
+      document.getElementById('banco-import-result').innerHTML = `<div style="color:var(--red)">Erro: ${escHtml(e.message)}</div>`;
+    } finally { btn.disabled = false; btn.textContent = 'Importar'; }
+  }
+
+  function downloadBancoTemplate() {
+    const header = 'topic_name,subject_name,statement,alt_a,alt_b,alt_c,alt_d,alt_e,correct_alt,explanation,source,year,difficulty';
+    const ex = 'Insuficiência Cardíaca,Cardiologia,"Paciente com dispneia e B3. Qual o achado típico do RX?",Cardiomegalia,"Hiperinsuflação","Derrame pleural isolado","Pneumonia bilateral","Silhueta normal",A,"Cardiomegalia + redistribuição vascular",Medcof,2024,medio';
+    const blob = new Blob([header + '\n' + ex], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'template_banco_questoes.csv'; a.click();
+  }
+
+  // ── Revisão de Erros ─────────────────────────────────────────────────────────
+  function openRevisaoErros() {
+    const m = document.getElementById('banco-erros-modal');
+    m.style.display = 'flex';
+    _loadErrosList();
+  }
+  function closeRevisaoErros() { document.getElementById('banco-erros-modal').style.display = 'none'; }
+
+  async function _loadErrosList() {
+    const list = document.getElementById('banco-erros-list');
+    list.innerHTML = '<div class="empty"><span class="spinner"></span> Carregando...</div>';
+    try {
+      const items = await fetchJSON('/api/questions/bank/wrong');
+      if (!items.length) {
+        list.innerHTML = '<div class="empty" style="padding:32px 0">🎉 Nenhum erro registrado ainda!</div>';
+        return;
+      }
+      list.innerHTML = items.map(q => {
+        const alts = q.alternatives || [];
+        const chosen = (q.chosen_alt || '').toUpperCase();
+        const correct = (q.correct_alt || '').toUpperCase();
+        return `<div class="gab-card">
+          <div class="gab-card-head">
+            <div class="gab-topic">${escHtml(q.topic_name||'—')}<span style="font-size:10px;font-weight:500;color:var(--sub);margin-left:6px">${escHtml(q.subject_name||'')}</span></div>
+            <div class="gab-result-badge wrong">✗ Errado</div>
+          </div>
+          ${q.statement ? `<div class="gab-stmt">${escHtml(q.statement)}</div>` : ''}
+          ${alts.length ? `<div class="gab-alts">${alts.map((alt,ai) => {
+            const letter = String.fromCharCode(65+ai);
+            const isCorrect = letter === correct;
+            const isChosen  = letter === chosen;
+            const cls = isCorrect ? 'correct' : isChosen ? 'wrong' : '';
+            const marker = isCorrect ? ' ✓' : isChosen ? ' ✗ (sua resposta)' : '';
+            return `<div class="gab-alt ${cls}"><span class="gab-alt-ltr">${letter})</span><span>${escHtml(alt.replace(/^[A-E]\)\s*/i,''))}${marker}</span></div>`;
+          }).join('')}</div>` : ''}
+          ${q.explanation ? `<div class="gab-explanation">💡 ${escHtml(q.explanation)}</div>` : ''}
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button onclick="retentarQuestao(${q.id},this)" style="font-size:12px;padding:5px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;color:var(--text);font-weight:600">↩ Tentar novamente</button>
+          </div>
+        </div>`;
+      }).join('');
+    } catch(e) { list.innerHTML = `<div class="empty">Erro: ${escHtml(e.message)}</div>`; }
+  }
+
+  async function retentarQuestao(id, btn) {
+    // Reset chosen_alt so it shows as unanswered again in banco
+    // Simply open answer modal for this question
+    closeRevisaoErros();
+    openQBAnswer(id);
   }
 
   // ── Donut Chart — Questões por Matéria ──────────────────────────────────────

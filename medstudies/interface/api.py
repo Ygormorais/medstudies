@@ -3680,3 +3680,101 @@ def question_bank_stats():
             "total": total, "answered": answered, "correct": correct,
             "accuracy": round(correct / answered * 100, 1) if answered else 0,
         }
+
+
+@app.post("/api/questions/bank/import-csv")
+async def question_bank_import_csv(file: UploadFile = File(...)):
+    """
+    CSV columns (header required):
+    topic_name, subject_name, statement, alt_a, alt_b, alt_c, alt_d, alt_e,
+    correct_alt, explanation, source, year, difficulty
+    alt_c/d/e optional. correct_alt = A|B|C|D|E
+    """
+    import csv, io, json as _json
+    content = await file.read()
+    text = content.decode("utf-8-sig")  # handle BOM
+    reader = csv.DictReader(io.StringIO(text))
+
+    # normalize headers
+    def _hdr(r): return {k.strip().lower(): (v.strip() if v else "") for k, v in r.items()}
+
+    imported = 0
+    skipped = 0
+    errors = []
+
+    with get_session() as db:
+        # build topic map (name -> id) for fast lookup
+        all_topics = db.query(Topic).all()
+        topic_map: dict[str, int] = {t.name.lower().strip(): t.id for t in all_topics}
+
+        # subject -> first topic fallback
+        subj_map: dict[str, int] = {}
+        for t in all_topics:
+            s = db.query(Subject).get(t.subject_id)
+            if s and s.name.lower().strip() not in subj_map:
+                subj_map[s.name.lower().strip()] = t.id
+
+        for i, row in enumerate(reader, 1):
+            r = _hdr(row)
+            stmt = r.get("statement", "")
+            if not stmt:
+                skipped += 1; continue
+
+            # resolve topic
+            topic_name = r.get("topic_name", "").lower().strip()
+            subject_name = r.get("subject_name", "").lower().strip()
+            topic_id = topic_map.get(topic_name) or subj_map.get(subject_name)
+            if not topic_id:
+                errors.append(f"Row {i}: topic '{r.get('topic_name')}' not found — skipped")
+                skipped += 1; continue
+
+            # build alternatives list (A-E, skip empty)
+            alts = [r.get(f"alt_{c}", "") for c in ("a","b","c","d","e")]
+            alts = [a for a in alts if a]
+            if len(alts) < 2:
+                errors.append(f"Row {i}: need ≥2 alternatives — skipped")
+                skipped += 1; continue
+
+            correct_alt = (r.get("correct_alt") or "").strip().upper()
+            if correct_alt not in list("ABCDE")[:len(alts)]:
+                errors.append(f"Row {i}: correct_alt '{correct_alt}' invalid — skipped")
+                skipped += 1; continue
+
+            year_raw = r.get("year", "")
+            try: year = int(year_raw) if year_raw else None
+            except ValueError: year = None
+
+            diff = r.get("difficulty", "medio").lower()
+            if diff not in ("facil","medio","dificil"): diff = "medio"
+
+            q = Question(
+                topic_id=topic_id,
+                statement=stmt,
+                alternatives=_json.dumps(alts, ensure_ascii=False),
+                correct_alt=correct_alt,
+                correct=False,
+                explanation=r.get("explanation") or None,
+                source=r.get("source") or None,
+                year=year,
+                difficulty=diff,
+            )
+            db.add(q)
+            imported += 1
+
+        db.commit()
+
+    return {"imported": imported, "skipped": skipped, "errors": errors}
+
+
+@app.get("/api/questions/bank/wrong")
+def question_bank_wrong(limit: int = 50):
+    """Questions answered at least once and got wrong — for error review."""
+    with get_session() as db:
+        items = (
+            db.query(Question)
+            .filter(Question.alternatives.isnot(None), Question.correct == False,
+                    Question.chosen_alt.isnot(None))
+            .order_by(Question.answered_at.desc())
+            .limit(limit).all()
+        )
+        return [_fmt_question(q, db) for q in items]

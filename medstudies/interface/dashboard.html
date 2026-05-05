@@ -1855,6 +1855,12 @@
         </div>
       </div>
 
+      <!-- Urgências de Hoje -->
+      <div id="today-urgency-widget" style="display:none;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 18px;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:800;color:var(--sub);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">⚡ Para Fazer Hoje</div>
+        <div id="today-urgency-items" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+
       <!-- Z5: Questão do Dia -->
       <div id="qod-card" style="display:none;margin-bottom:10px;border-radius:10px;border:1.5px solid var(--primary);background:var(--card);overflow:hidden">
         <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border)">
@@ -4654,7 +4660,7 @@
           ${data.errors.length ? `<div style="color:var(--red);margin-top:6px">${data.errors.length} erro(s) de importação</div>` : ''}
         </div>`;
       toast(`✓ ${data.records_created} questões importadas.`);
-      await Promise.all([loadWeak(), loadScores(), loadHistory(), loadPlan()]);
+      await Promise.all([loadWeak(), loadScores(), loadHistory(), loadPlan(), loadTodayUrgency()]);
     } catch(e) { toast(e.message, 'error'); }
     finally { btn.disabled = false; btn.textContent = 'Importar'; }
   }
@@ -4762,6 +4768,41 @@
     const btn = document.getElementById('cta-label');
     btn.textContent = `Iniciar Revisão — ${shown.length} Tópicos`;
   }
+
+  async function loadTodayUrgency() {
+    try {
+      const d = await fetchJSON('/api/plan/today-summary');
+      const items = [];
+      if (d.fc_due > 0) items.push({
+        icon: '🧠', label: `${d.fc_due} flashcard${d.fc_due!==1?'s':''} vencido${d.fc_due!==1?'s':''}`,
+        color: '#8B5CF6', action: () => { navTo('page-agenda','nav-agenda'); loadAgenda(); },
+      });
+      if (d.wrong_banco > 0) items.push({
+        icon: '❌', label: `${d.wrong_banco} questão${d.wrong_banco!==1?'s':''} errada${d.wrong_banco!==1?'s':''} p/ revisar`,
+        color: 'var(--red)', action: () => { navTo('page-banco','nav-banco'); loadBanco(); openRevisaoErros(); },
+      });
+      if (d.overdue_topics > 0) items.push({
+        icon: '📚', label: `${d.overdue_topics} tópico${d.overdue_topics!==1?'s':''} sem revisão há +14 dias`,
+        color: '#F59E0B', action: () => generatePlan(),
+      });
+      if (d.unanswered_banco > 0) items.push({
+        icon: '🎯', label: `${d.unanswered_banco} questão${d.unanswered_banco!==1?'s':''} no banco sem responder`,
+        color: '#2979E0', action: () => { navTo('page-banco','nav-banco'); loadBanco(); },
+      });
+      const widget = document.getElementById('today-urgency-widget');
+      const list   = document.getElementById('today-urgency-items');
+      if (!items.length) { widget.style.display = 'none'; return; }
+      widget.style.display = 'block';
+      list.innerHTML = items.map((it,i) => `
+        <div onclick="_urgencyAction(${i})" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--bg);cursor:pointer;border:1px solid var(--border);transition:border-color .15s" onmouseenter="this.style.borderColor='${it.color}'" onmouseleave="this.style.borderColor=''">
+          <span style="font-size:16px">${it.icon}</span>
+          <span style="font-size:13px;font-weight:600;flex:1">${it.label}</span>
+          <span style="font-size:12px;color:${it.color};font-weight:800">→</span>
+        </div>`).join('');
+      window._urgencyActions = items.map(it => it.action);
+    } catch(e) { /* silently ignore */ }
+  }
+  function _urgencyAction(i) { if (window._urgencyActions?.[i]) window._urgencyActions[i](); }
 
   async function loadPlan() {
     document.getElementById('plan-list').innerHTML = skeletonRows(5);
@@ -9753,7 +9794,7 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     _loadDailyGoalInputs();
     loadDailyGoalBars();
     fetchJSON('/api/subjects/accuracy-goals').then(g => { _accGoals = g || {}; }).catch(() => {});
-    await Promise.all([loadPlan(), loadWeak(), loadScores(), loadHistory(), loadWeekly(), loadStats(), loadActivities()]);
+    await Promise.all([loadPlan(), loadWeak(), loadScores(), loadHistory(), loadWeekly(), loadStats(), loadActivities(), loadTodayUrgency()]);
     loadPlanTagFilter();
     loadHeroProgress();
     loadTipOfDay();

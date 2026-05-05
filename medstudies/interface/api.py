@@ -103,6 +103,73 @@ def _enrich_plan(plan_dict: dict, db) -> dict:
     return plan_dict
 
 
+@app.get("/api/plan/today-summary")
+def today_summary():
+    """
+    Aggregated urgency panel for the home screen:
+    - SM-2 flashcards due today
+    - Wrong banco questions to review
+    - Uncovered edital topics (high weight, no topic match)
+    - Weakest subjects by error rate
+    """
+    from datetime import date as _date
+    db = get_session()
+    today = datetime.utcnow()
+
+    # SM-2 flashcards due
+    fc_due = db.query(func.count(FlashCard.id)).filter(
+        FlashCard.next_review <= today
+    ).scalar() or 0
+
+    # Wrong banco questions
+    wrong_banco = db.query(func.count(Question.id)).filter(
+        Question.alternatives.isnot(None),
+        Question.correct == False,
+        Question.chosen_alt.isnot(None),
+    ).scalar() or 0
+
+    # Unanswered banco questions (never attempted)
+    unanswered_banco = db.query(func.count(Question.id)).filter(
+        Question.alternatives.isnot(None),
+        Question.chosen_alt.is_(None),
+    ).scalar() or 0
+
+    # Uncovered edital topics (no topic_id match, weight_pct > 0)
+    uncovered_edital = db.query(func.count(EditorialTopic.id)).filter(
+        EditorialTopic.topic_id.is_(None),
+        EditorialTopic.weight_pct > 0,
+    ).scalar() or 0
+
+    # Subjects with highest error rate
+    from medstudies.engine.scorer import TopicScorer
+    scores = TopicScorer(db).score_all()
+    from collections import defaultdict
+    subj_acc: dict[str, dict] = defaultdict(lambda: {"correct": 0, "total": 0})
+    for s in scores:
+        if s.total_questions > 0:
+            subj_acc[s.subject_name]["total"] += s.total_questions
+            subj_acc[s.subject_name]["correct"] += round(s.total_questions * (1 - s.error_rate))
+    weak_subjects = sorted(
+        [{"subject": k, "error_rate": round((v["total"]-v["correct"])/v["total"]*100,1), "total": v["total"]}
+         for k, v in subj_acc.items() if v["total"] >= 3],
+        key=lambda x: x["error_rate"], reverse=True
+    )[:5]
+
+    # Topics overdue for review (days_since_review > 14)
+    scores_overdue = [s for s in scores if s.days_since_review > 14]
+    overdue_count = len(scores_overdue)
+
+    return {
+        "fc_due": fc_due,
+        "wrong_banco": wrong_banco,
+        "unanswered_banco": unanswered_banco,
+        "uncovered_edital": uncovered_edital,
+        "overdue_topics": overdue_count,
+        "weak_subjects": weak_subjects,
+        "generated_at": today.isoformat(),
+    }
+
+
 @app.post("/api/plan/generate")
 def generate_plan(max_topics: int = 8):
     db = get_session()

@@ -79,6 +79,11 @@ class Question(Base):
     notes = Column(Text, nullable=True)
     difficulty = Column(String(20), default="medio", nullable=True)  # facil | medio | dificil
     statement = Column(Text, nullable=True)       # full question text / stem
+    alternatives = Column(Text, nullable=True)    # JSON: ["A) ...", "B) ...", ...]
+    correct_alt = Column(String(1), nullable=True) # A | B | C | D | E
+    chosen_alt = Column(String(1), nullable=True)  # what student picked
+    explanation = Column(Text, nullable=True)      # gabarito comentado
+    year = Column(Integer, nullable=True)          # exam year
 
     topic = relationship("Topic", back_populates="questions")
 
@@ -211,6 +216,30 @@ class DailyPlan(Base):
 
     __table_args__ = (
         Index("ix_daily_plans_plan_date", "plan_date"),
+    )
+
+
+class EditorialTopic(Base):
+    """
+    Curriculum item from a specific residency exam (edital).
+    topic_id links to an existing Topic when matched; NULL = uncovered.
+    """
+    __tablename__ = "editorial_topics"
+
+    id           = Column(Integer, primary_key=True)
+    exam_name    = Column(String(100), nullable=False)   # e.g. "USP 2025"
+    subject_name = Column(String(120), nullable=False)
+    topic_name   = Column(String(200), nullable=False)
+    weight_pct   = Column(Float, default=0.0)            # % importance in edital
+    topic_id     = Column(Integer, ForeignKey("topics.id"), nullable=True)  # matched topic
+    created_at   = Column(DateTime, default=datetime.utcnow)
+
+    topic = relationship("Topic")
+
+    __table_args__ = (
+        Index("ix_editorial_exam_name",    "exam_name"),
+        Index("ix_editorial_subject_name", "subject_name"),
+        Index("ix_editorial_topic_id",     "topic_id"),
     )
 
 

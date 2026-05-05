@@ -1494,6 +1494,32 @@
     .sim-subj-row:last-child { border-bottom: none; }
     .sim-subj-name { flex: 1; font-size: 13px; font-weight: 700; }
     .sim-subj-stat { font-size: 12px; color: var(--sub); }
+    /* ── Simulado modo banco / gabarito ── */
+    .sim-mode-toggle { display:flex;gap:10px;margin-top:8px; }
+    .sim-mode-btn { flex:1;padding:12px;border-radius:10px;border:2px solid var(--border);background:var(--bg);cursor:pointer;text-align:center;font-size:13px;font-weight:700;color:var(--sub);transition:all .15s; }
+    .sim-mode-btn.active { border-color:var(--red);color:var(--red);background:rgba(232,54,42,.06); }
+    .sim-alt-list { display:flex;flex-direction:column;gap:6px;margin-top:12px; }
+    .sim-alt-btn { display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;font-size:13px;text-align:left;transition:all .15s;width:100%;font-family:inherit;color:var(--text); }
+    .sim-alt-btn:hover { border-color:var(--red);background:rgba(232,54,42,.05); }
+    .sim-alt-btn.selected { border-color:#3B82F6;background:rgba(59,130,246,.08); }
+    .sim-alt-btn.correct-reveal { border-color:#22C55E;background:#DCFCE7;font-weight:700; }
+    .sim-alt-btn.wrong-reveal { border-color:var(--red);background:#FEE2E1; }
+    .sim-alt-letter { font-size:12px;font-weight:800;width:20px;flex-shrink:0; }
+    .gab-card { background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;margin-bottom:12px; }
+    .gab-card-head { display:flex;align-items:center;gap:10px;margin-bottom:8px; }
+    .gab-num { font-size:11px;font-weight:800;color:var(--sub);min-width:24px; }
+    .gab-topic { font-size:13px;font-weight:700;flex:1;min-width:0; }
+    .gab-result-badge { font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;flex-shrink:0; }
+    .gab-result-badge.correct { background:#DCFCE7;color:#15803D; }
+    .gab-result-badge.wrong { background:#FEE2E1;color:#B91C1C; }
+    .gab-result-badge.nr { background:var(--border);color:var(--sub); }
+    .gab-stmt { font-size:13px;line-height:1.6;color:var(--text);margin-bottom:10px;white-space:pre-wrap; }
+    .gab-alts { display:flex;flex-direction:column;gap:4px;margin-bottom:10px; }
+    .gab-alt { display:flex;gap:8px;font-size:12px;padding:6px 10px;border-radius:8px;border:1px solid var(--border); }
+    .gab-alt.correct { background:#DCFCE7;border-color:#22C55E;font-weight:700; }
+    .gab-alt.wrong { background:#FEE2E1;border-color:var(--red); }
+    .gab-alt-ltr { font-weight:800;min-width:16px; }
+    .gab-explanation { font-size:12px;color:var(--sub);background:var(--bg);border-radius:8px;padding:10px 12px;border-left:3px solid var(--red);line-height:1.6; }
 
     /* ── Relatório ── */
     .rel-wrap { max-width: 720px; margin: 0 auto; padding: 32px 24px; }
@@ -1677,6 +1703,9 @@
   <div class="sidebar-icon" id="nav-sessions" title="Histórico de Sessões" onclick="navTo('page-sessions','nav-sessions')">⏱️<span class="sidebar-lbl">Sessões</span></div>
   <div class="sidebar-icon" id="nav-mensal" title="Relatório Mensal" onclick="navTo('page-mensal','nav-mensal');loadMensal()">📆<span class="sidebar-lbl">Mensal</span></div>
   <div class="sidebar-icon" id="nav-conquistas" title="Conquistas & XP" onclick="navTo('page-conquistas','nav-conquistas')">🏆<span class="sidebar-lbl">Conquistas</span></div>
+
+  <div class="sidebar-icon" id="nav-edital" title="Mapa do Edital (x)" onclick="navTo('page-edital','nav-edital');loadEdital()">🗺️<span class="sidebar-lbl">Edital</span></div>
+  <div class="sidebar-icon" id="nav-banco" title="Banco de Questões (k)" onclick="navTo('page-banco','nav-banco');loadBanco()">🧩<span class="sidebar-lbl">Banco Q</span></div>
 
   <!-- Sistema -->
   <div class="sidebar-divider"></div>
@@ -3123,6 +3152,150 @@
     <iframe id="bib-preview-frame" src="" style="flex:1;border:none;width:100%"></iframe>
   </div>
 
+  <!-- ── Mapa do Edital ─────────────────────────────────────────────────── -->
+  <div class="page" id="page-edital">
+    <div class="content">
+      <div class="col-main">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+          <div>
+            <h2 style="font-size:20px;font-weight:900;margin-bottom:2px">🗺️ Mapa do Edital</h2>
+            <div style="font-size:13px;color:var(--sub)">Cobertura dos tópicos exigidos no concurso</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select id="edital-exam-sel" onchange="loadEdital()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+              <option value="">Todos os editais</option>
+            </select>
+            <button onclick="openEditalImport()" style="padding:8px 16px;border-radius:8px;border:none;background:var(--red);color:#fff;font-weight:700;font-size:13px;cursor:pointer">⬆ Importar CSV</button>
+          </div>
+        </div>
+        <!-- Coverage summary bar -->
+        <div id="edital-coverage-bar" style="background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;margin-bottom:16px;display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:14px;font-weight:800">Cobertura geral</span>
+            <span id="edital-pct-label" style="font-size:20px;font-weight:900;color:var(--red)">0%</span>
+          </div>
+          <div style="height:10px;background:var(--border);border-radius:5px;overflow:hidden">
+            <div id="edital-pct-bar" style="height:100%;background:var(--red);border-radius:5px;transition:width .6s ease;width:0%"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--sub)">
+            <span id="edital-covered-label">0 cobertos</span>
+            <span id="edital-total-label">0 total</span>
+          </div>
+        </div>
+        <!-- Subject breakdown -->
+        <div id="edital-subjects" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
+      <div class="col-side">
+        <div style="background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;margin-bottom:16px">
+          <div style="font-size:13px;font-weight:800;margin-bottom:12px">📋 Editais cadastrados</div>
+          <div id="edital-exams-list"><div class="empty"><span class="spinner"></span></div></div>
+        </div>
+        <div style="background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px">
+          <div style="font-size:13px;font-weight:800;margin-bottom:10px">📥 Formato CSV</div>
+          <div style="font-size:11px;color:var(--sub);line-height:1.7">
+            Colunas: <code>materia, topico, peso</code><br>
+            Ex: <code>Cardiologia, Insuficiência Cardíaca, 5.2</code><br><br>
+            O sistema faz match automático com tópicos cadastrados.
+          </div>
+          <a href="#" onclick="downloadEditalTemplate(event)" style="display:inline-block;margin-top:10px;font-size:12px;color:var(--red);font-weight:600">⬇ Baixar template CSV</a>
+        </div>
+      </div>
+    </div>
+  </div><!-- end page-edital -->
+
+  <!-- Edital import modal -->
+  <div id="edital-import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1400;align-items:center;justify-content:center;backdrop-filter:blur(4px)" onclick="if(event.target===this)closeEditalImport()">
+    <div style="background:var(--card);border-radius:20px;padding:28px;width:min(480px,96vw);box-shadow:0 24px 64px rgba(0,0,0,.3)">
+      <div style="font-size:16px;font-weight:900;margin-bottom:18px">Importar Edital CSV</div>
+      <input id="edital-exam-name-input" type="text" placeholder="Nome do concurso (ex: USP 2025) *"
+        style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box;margin-bottom:12px">
+      <input id="edital-csv-file" type="file" accept=".csv,.txt" style="font-size:13px;margin-bottom:16px;display:block">
+      <div id="edital-import-result" style="font-size:12px;color:var(--sub);margin-bottom:12px;min-height:18px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button onclick="closeEditalImport()" style="padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-weight:600">Cancelar</button>
+        <button onclick="submitEditalCSV()" style="padding:10px 24px;border-radius:10px;border:none;background:var(--red);color:#fff;cursor:pointer;font-weight:700">Importar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Banco de Questões ──────────────────────────────────────────────── -->
+  <div class="page" id="page-banco">
+    <div class="content">
+      <div class="col-main">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+          <div>
+            <h2 style="font-size:20px;font-weight:900;margin-bottom:2px">🧩 Banco de Questões</h2>
+            <div style="font-size:13px;color:var(--sub)">Questões com alternativas — resolva e veja o gabarito</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select id="banco-subject-filter" onchange="loadBanco()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+              <option value="">Todas as matérias</option>
+            </select>
+            <button onclick="openAddQBModal()" style="padding:8px 16px;border-radius:8px;border:none;background:var(--red);color:#fff;font-weight:700;font-size:13px;cursor:pointer">+ Questão</button>
+          </div>
+        </div>
+        <div id="banco-stats-bar" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap"></div>
+        <div id="banco-list" style="display:flex;flex-direction:column;gap:12px">
+          <div class="empty"><span class="spinner"></span> Carregando...</div>
+        </div>
+      </div>
+      <div class="col-side">
+        <div style="background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px">
+          <div style="font-size:13px;font-weight:800;margin-bottom:12px">📊 Resumo</div>
+          <div id="banco-side-stats"></div>
+        </div>
+      </div>
+    </div>
+  </div><!-- end page-banco -->
+
+  <!-- Banco de Questões: Answer modal -->
+  <div id="qb-answer-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1400;align-items:center;justify-content:center;backdrop-filter:blur(6px)" onclick="if(event.target===this)closeQBModal()">
+    <div style="background:var(--card);border-radius:20px;padding:28px;width:min(640px,97vw);max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.35)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div>
+          <div id="qb-modal-ctx" style="font-size:11px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.4px"></div>
+          <div id="qb-modal-source" style="font-size:11px;color:var(--sub);margin-top:2px"></div>
+        </div>
+        <button onclick="closeQBModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub)">✕</button>
+      </div>
+      <div id="qb-modal-statement" style="font-size:15px;line-height:1.65;margin-bottom:18px;font-weight:500"></div>
+      <div id="qb-modal-alts" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
+      <div id="qb-modal-result" style="display:none;padding:14px 16px;border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.6"></div>
+      <div id="qb-modal-explanation" style="display:none;background:var(--bg);border-radius:10px;padding:14px 16px;font-size:13px;line-height:1.7;color:var(--text);border-left:3px solid var(--red)"></div>
+    </div>
+  </div>
+
+  <!-- Banco de Questões: Add modal -->
+  <div id="qb-add-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1400;align-items:center;justify-content:center;backdrop-filter:blur(4px)" onclick="if(event.target===this)closeAddQBModal()">
+    <div style="background:var(--card);border-radius:20px;padding:28px;width:min(640px,96vw);max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.3)">
+      <div style="font-size:16px;font-weight:900;margin-bottom:18px">Adicionar Questão</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <select id="qb-add-topic" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+          <option value="">Selecione o tópico *</option>
+        </select>
+        <textarea id="qb-add-statement" placeholder="Enunciado da questão *" rows="4"
+          style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;resize:vertical;font-family:inherit;box-sizing:border-box;width:100%"></textarea>
+        <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:2px">Alternativas (marque a correta)</div>
+        <div id="qb-add-alts" style="display:flex;flex-direction:column;gap:6px"></div>
+        <textarea id="qb-add-explanation" placeholder="Gabarito comentado (opcional)" rows="3"
+          style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;resize:vertical;font-family:inherit;box-sizing:border-box;width:100%"></textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input id="qb-add-source" type="text" placeholder="Fonte (ex: USP 2024)" style="flex:1;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+          <input id="qb-add-year" type="number" placeholder="Ano" style="width:80px;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+          <select id="qb-add-diff" style="flex:1;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+            <option value="facil">🟢 Fácil</option>
+            <option value="medio" selected>🟡 Médio</option>
+            <option value="dificil">🔴 Difícil</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end">
+        <button onclick="closeAddQBModal()" style="padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;font-weight:600">Cancelar</button>
+        <button onclick="saveQBQuestion()" style="padding:10px 24px;border-radius:10px;border:none;background:var(--red);color:#fff;cursor:pointer;font-weight:700">Salvar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- page: Simulado -->
   <div class="page" id="page-simulado">
     <div class="sim-wrap">
@@ -3131,6 +3304,18 @@
       <div class="sim-step active" id="sim-step-config">
         <div class="sim-header">
           <h2>🎯 Modo Simulado</h2>
+        </div>
+
+        <div class="config-section" style="margin-bottom:18px">
+          <div class="config-section-title">🗂 Modo do Simulado</div>
+          <div class="sim-mode-toggle">
+            <button class="sim-mode-btn active" id="sim-mode-topics" onclick="setSimMode('topics')">
+              📚 Por Tópicos<div style="font-size:11px;font-weight:500;margin-top:2px;color:var(--sub)">Marcar ✓/✗ por tópico</div>
+            </button>
+            <button class="sim-mode-btn" id="sim-mode-banco" onclick="setSimMode('banco')">
+              🎯 Banco de Questões<div style="font-size:11px;font-weight:500;margin-top:2px;color:var(--sub)">MCQ com gabarito</div>
+            </button>
+          </div>
         </div>
 
         <div class="config-section" style="margin-bottom:18px">
@@ -3257,6 +3442,12 @@
             <div id="sim-res-by-topic" style="margin-top:10px"></div>
           </details>
         </div>
+        <!-- Gabarito Comentado (banco mode only) -->
+        <div class="config-section" id="sim-gabarito-section" style="margin-top:12px;display:none">
+          <div class="config-section-title">📋 Gabarito Comentado</div>
+          <div id="sim-gabarito-list"></div>
+        </div>
+
         <div style="margin-top:12px;padding:14px 18px;background:var(--blue-tag);border-radius:10px;font-size:13px;color:var(--blue-tag-text)">
           ✓ Questões salvas no banco. Os scores de prioridade foram atualizados.
         </div>
@@ -4254,6 +4445,10 @@
     el.className = 'toast show' + (type === 'error' ? ' error' : '');
     setTimeout(() => el.className = 'toast', 3000);
   }
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
   function toast(msg, type = 'ok') {
     if (_silentMode && type !== 'error') return; // suppress non-error toasts in silent mode
     _rawToast(msg, type);
@@ -6763,6 +6958,8 @@ ${(plan.items || []).map((item, i) => `<tr>
       'w': ['page-report',      'nav-report'],
       'n': ['page-news',        'nav-news'],
       'b': ['page-biblioteca',  'nav-biblioteca'],
+      'x': ['page-edital',      'nav-edital'],
+      'k': ['page-banco',       'nav-banco'],
       ',': ['page-config',      'nav-config'],
     };
     let _gPressed = false;
@@ -8725,6 +8922,18 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
   }
 
   // ── Módulo Simulado ────────────────────────────────────────────────────────
+  let _simMode = 'topics'; // 'topics' | 'banco'
+  let _simBancoQuestions = []; // full MCQ questions for banco mode
+  let _simBancoAnswers = {}; // idx -> chosen letter
+
+  function setSimMode(mode) {
+    _simMode = mode;
+    document.getElementById('sim-mode-topics').classList.toggle('active', mode === 'topics');
+    document.getElementById('sim-mode-banco').classList.toggle('active', mode === 'banco');
+    // In banco mode, show/hide topic selector
+    const topicSec = document.querySelector('#sim-step-config .config-section:last-of-type');
+  }
+
   let _simTopics = [];
   let _simTimeMin = 60;
   let _simTimerInterval = null;
@@ -8792,46 +9001,94 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     updateSimCount();
   }
 
-  function startSimulado() {
-    const checked = [...document.querySelectorAll('.sim-topic-cb:checked')];
-    if (!checked.length) { toast('Selecione ao menos um tópico.'); return; }
-    const selected = checked.map(cb => _simTopics[parseInt(cb.dataset.idx)]);
+  async function startSimulado() {
     const source = document.getElementById('sim-source').value.trim() || 'Simulado';
 
-    // build questions list (1 per topic)
-    _simTopics._selected = selected;
-    _simTopics._source = source;
-    _simTopics._answers = {}; // idx -> 'correct'|'wrong'|null
+    if (_simMode === 'banco') {
+      // Banco mode: fetch MCQ questions
+      let questions;
+      try {
+        questions = await fetchJSON('/api/questions/bank?limit=200');
+      } catch(e) { toast('Erro ao carregar banco: ' + e.message, 'error'); return; }
+      if (!questions.length) {
+        toast('Banco vazio. Adicione questões no Banco de Questões primeiro.', 'error'); return;
+      }
+      // shuffle & cap at configured time-based count or all
+      questions = questions.sort(() => Math.random() - .5);
+      _simBancoQuestions = questions;
+      _simBancoAnswers = {};
 
-    // switch step
-    document.getElementById('sim-step-config').classList.remove('active');
-    document.getElementById('sim-step-exam').classList.add('active');
-    document.getElementById('sim-source-label').textContent = source;
-    document.getElementById('sim-counter').textContent = `0 / ${selected.length} respondidas`;
+      _simTopics._source = source;
+      _simTopics._answers = {};
+      document.getElementById('sim-step-config').classList.remove('active');
+      document.getElementById('sim-step-exam').classList.add('active');
+      document.getElementById('sim-source-label').textContent = source;
+      document.getElementById('sim-counter').textContent = `0 / ${questions.length} respondidas`;
 
-    // render questions
-    document.getElementById('sim-questions-list').innerHTML = selected.map((t, i) => `
-      <div class="sim-question-card" id="sim-q-${i}">
-        <div class="sim-q-num">${i + 1}</div>
-        <div class="sim-q-body">
-          <div class="sim-q-topic">${t.topic_name}</div>
-          <div class="sim-q-subject">${t.subject_name}</div>
-          <!-- B5: inline statement + notes -->
-          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-            <button onclick="toggleSimInline(${i})" style="font-size:10px;padding:2px 8px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--sub);cursor:pointer">✏️ Enunciado/obs</button>
+      document.getElementById('sim-questions-list').innerHTML = questions.map((q, i) => {
+        const alts = (q.alternatives || []);
+        return `<div class="sim-question-card" id="sim-q-${i}" style="flex-direction:column;align-items:stretch;gap:10px">
+          <div style="display:flex;align-items:flex-start;gap:12px">
+            <div class="sim-q-num" style="margin-top:2px">${i + 1}</div>
+            <div class="sim-q-body" style="flex:1">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+                <span class="sim-q-topic">${q.topic_name || '—'}</span>
+                <span class="sim-q-subject">${q.subject_name || ''}</span>
+                ${q.year ? `<span style="font-size:10px;background:var(--border);padding:1px 6px;border-radius:4px">${q.year}</span>` : ''}
+                ${q.difficulty ? `<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:${q.difficulty==='dificil'?'#FEE2E1':q.difficulty==='facil'?'#DCFCE7':'#FEF9C3'};color:${q.difficulty==='dificil'?'#B91C1C':q.difficulty==='facil'?'#15803D':'#92400E'}">${q.difficulty}</span>` : ''}
+              </div>
+              ${q.statement ? `<div style="font-size:13px;line-height:1.6;margin-bottom:10px;white-space:pre-wrap">${escHtml(q.statement)}</div>` : '<div style="font-size:12px;color:var(--sub);margin-bottom:8px;font-style:italic">Questão sem enunciado</div>'}
+            </div>
           </div>
-          <div id="sim-inline-${i}" style="display:none;margin-top:8px">
-            <textarea id="sim-stmt-${i}" placeholder="Enunciado da questão (opcional)..." rows="2"
-              style="width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:12px;background:var(--bg);color:var(--text);resize:vertical;font-family:inherit;margin-bottom:4px"></textarea>
-            <input id="sim-obs-${i}" type="text" placeholder="Observação/anotação (opcional)..."
-              style="width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:5px 9px;font-size:12px;background:var(--bg);color:var(--text);font-family:inherit">
+          ${alts.length ? `<div class="sim-alt-list" id="sim-alts-${i}">${alts.map((alt,ai) => {
+            const letter = String.fromCharCode(65+ai);
+            return `<button class="sim-alt-btn" id="sim-alt-${i}-${letter}" onclick="markSimBancoAlt(${i},'${letter}')" data-letter="${letter}">
+              <span class="sim-alt-letter">${letter})</span><span>${escHtml(alt.replace(/^[A-E]\)\s*/i,''))}</span>
+            </button>`;
+          }).join('')}</div>` : ''}
+          <input id="sim-obs-${i}" type="text" placeholder="Anotação (opcional)..."
+            style="width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:5px 9px;font-size:12px;background:var(--bg);color:var(--text);font-family:inherit">
+        </div>`;
+      }).join('');
+
+    } else {
+      // Topics mode (existing logic)
+      const checked = [...document.querySelectorAll('.sim-topic-cb:checked')];
+      if (!checked.length) { toast('Selecione ao menos um tópico.'); return; }
+      const selected = checked.map(cb => _simTopics[parseInt(cb.dataset.idx)]);
+
+      _simTopics._selected = selected;
+      _simTopics._source = source;
+      _simTopics._answers = {};
+
+      document.getElementById('sim-step-config').classList.remove('active');
+      document.getElementById('sim-step-exam').classList.add('active');
+      document.getElementById('sim-source-label').textContent = source;
+      document.getElementById('sim-counter').textContent = `0 / ${selected.length} respondidas`;
+
+      document.getElementById('sim-questions-list').innerHTML = selected.map((t, i) => `
+        <div class="sim-question-card" id="sim-q-${i}">
+          <div class="sim-q-num">${i + 1}</div>
+          <div class="sim-q-body">
+            <div class="sim-q-topic">${t.topic_name}</div>
+            <div class="sim-q-subject">${t.subject_name}</div>
+            <!-- B5: inline statement + notes -->
+            <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+              <button onclick="toggleSimInline(${i})" style="font-size:10px;padding:2px 8px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--sub);cursor:pointer">✏️ Enunciado/obs</button>
+            </div>
+            <div id="sim-inline-${i}" style="display:none;margin-top:8px">
+              <textarea id="sim-stmt-${i}" placeholder="Enunciado da questão (opcional)..." rows="2"
+                style="width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:12px;background:var(--bg);color:var(--text);resize:vertical;font-family:inherit;margin-bottom:4px"></textarea>
+              <input id="sim-obs-${i}" type="text" placeholder="Observação/anotação (opcional)..."
+                style="width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:5px 9px;font-size:12px;background:var(--bg);color:var(--text);font-family:inherit">
+            </div>
           </div>
-        </div>
-        <div class="sim-q-btns">
-          <button class="sim-q-btn" id="sim-cb-${i}-c" onclick="markSimQ(${i},'correct')" title="Correto">✓</button>
-          <button class="sim-q-btn" id="sim-cb-${i}-w" onclick="markSimQ(${i},'wrong')" title="Errado">✗</button>
-        </div>
-      </div>`).join('');
+          <div class="sim-q-btns">
+            <button class="sim-q-btn" id="sim-cb-${i}-c" onclick="markSimQ(${i},'correct')" title="Correto">✓</button>
+            <button class="sim-q-btn" id="sim-cb-${i}-w" onclick="markSimQ(${i},'wrong')" title="Errado">✗</button>
+          </div>
+        </div>`).join('');
+    }
 
     // T4: Exam mode — block navigation away
     window._simExamActive = true;
@@ -8890,6 +9147,21 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     document.getElementById('sim-progress-fill').style.width = `${answered / total * 100}%`;
   }
 
+  function markSimBancoAlt(idx, letter) {
+    _simBancoAnswers[idx] = letter;
+    // highlight selected button
+    const container = document.getElementById(`sim-alts-${idx}`);
+    if (!container) return;
+    container.querySelectorAll('.sim-alt-btn').forEach(b => b.classList.remove('selected'));
+    const sel = document.getElementById(`sim-alt-${idx}-${letter}`);
+    if (sel) sel.classList.add('selected');
+    // update counter
+    const answered = Object.keys(_simBancoAnswers).length;
+    const total = _simBancoQuestions.length;
+    document.getElementById('sim-counter').textContent = `${answered} / ${total} respondidas`;
+    document.getElementById('sim-progress-fill').style.width = `${answered / total * 100}%`;
+  }
+
   async function finishSimulado() {
     clearInterval(_simTimerInterval);
     // T4: unlock exam mode
@@ -8899,49 +9171,153 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     const examBadge = document.getElementById('sim-exam-badge');
     if (examBadge) examBadge.style.display = 'none';
     _simElapsedSec = _simStartTime ? Math.round((new Date() - _simStartTime) / 1000) : 0;
-    const selected = _simTopics._selected;
-    const answers  = _simTopics._answers;
     const source   = _simTopics._source;
     const dateVal  = document.getElementById('sim-date').value;
 
-    // build questions payload (B5: collect inline statement/notes)
-    const questions = selected.map((t, i) => ({
-      topic_name:   t.topic_name,
-      subject_name: t.subject_name,
-      correct:      answers[i] === 'correct' ? 'true' : 'false',
-      statement:    document.getElementById(`sim-stmt-${i}`)?.value?.trim() || '',
-      notes:        document.getElementById(`sim-obs-${i}`)?.value?.trim()  || '',
-    }));
+    let total, correct, wrong, answered, errPct, bySubj;
+    const gabSection = document.getElementById('sim-gabarito-section');
 
-    // save to DB
-    try {
-      await fetchJSON('/api/mock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          source,
-          date: dateVal ? dateVal + 'T12:00:00' : null,
-          questions,
-        }),
+    if (_simMode === 'banco') {
+      const qs = _simBancoQuestions;
+      const ans = _simBancoAnswers;
+      total    = qs.length;
+      answered = Object.keys(ans).length;
+      correct  = qs.filter((q, i) => ans[i] && ans[i].toUpperCase() === (q.correct_alt||'').toUpperCase()).length;
+      wrong    = answered - correct;
+      errPct   = answered ? Math.round(wrong / answered * 100) : 0;
+
+      // save each answered question via API
+      const savePromises = qs.map((q, i) => {
+        if (!ans[i]) return Promise.resolve();
+        const notes = document.getElementById(`sim-obs-${i}`)?.value?.trim() || '';
+        return fetchJSON(`/api/questions/${q.id}/answer`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ chosen_alt: ans[i], notes }),
+        }).catch(() => {});
       });
-    } catch(e) { toast('Erro ao salvar: ' + e.message, 'error'); }
+      try { await Promise.all(savePromises); } catch(e) {}
 
-    // compute results
-    const total   = questions.length;
-    const answered = Object.keys(answers).length;
-    const correct  = Object.values(answers).filter(v => v === 'correct').length;
-    const wrong    = answered - correct;
-    const errPct   = answered ? Math.round(wrong / answered * 100) : 0;
+      // also save as mock session for stats
+      const mockQs = qs.map((q, i) => ({
+        topic_name: q.topic_name || '',
+        subject_name: q.subject_name || '',
+        correct: ans[i] && ans[i].toUpperCase() === (q.correct_alt||'').toUpperCase() ? 'true' : 'false',
+        statement: q.statement || '',
+        notes: document.getElementById(`sim-obs-${i}`)?.value?.trim() || '',
+      }));
+      try {
+        await fetchJSON('/api/mock', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ source, date: dateVal ? dateVal+'T12:00:00' : null, questions: mockQs }),
+        });
+      } catch(e) {}
 
-    // by subject
-    const bySubj = {};
-    selected.forEach((t, i) => {
-      if (!bySubj[t.subject_name]) bySubj[t.subject_name] = { total: 0, correct: 0, wrong: 0, unanswered: 0 };
-      const ans = answers[i];
-      if (ans === 'correct') { bySubj[t.subject_name].correct++; bySubj[t.subject_name].total++; }
-      else if (ans === 'wrong') { bySubj[t.subject_name].wrong++; bySubj[t.subject_name].total++; }
-      else bySubj[t.subject_name].unanswered++;
-    });
+      // by subject
+      bySubj = {};
+      qs.forEach((q, i) => {
+        const subj = q.subject_name || 'Sem assunto';
+        if (!bySubj[subj]) bySubj[subj] = { total: 0, correct: 0, wrong: 0, unanswered: 0 };
+        const chosen = ans[i];
+        if (!chosen) { bySubj[subj].unanswered++; return; }
+        const isRight = chosen.toUpperCase() === (q.correct_alt||'').toUpperCase();
+        bySubj[subj].total++;
+        if (isRight) bySubj[subj].correct++; else bySubj[subj].wrong++;
+      });
+
+      // build gabarito comentado
+      if (gabSection) {
+        gabSection.style.display = 'block';
+        document.getElementById('sim-gabarito-list').innerHTML = qs.map((q, i) => {
+          const chosen = ans[i];
+          const corrAlt = (q.correct_alt || '').toUpperCase();
+          const isRight = chosen && chosen.toUpperCase() === corrAlt;
+          const badgeClass = !chosen ? 'nr' : isRight ? 'correct' : 'wrong';
+          const badgeText  = !chosen ? 'N/R' : isRight ? '✓ Certo' : '✗ Errado';
+          const alts = q.alternatives || [];
+          return `<div class="gab-card">
+            <div class="gab-card-head">
+              <div class="gab-num">${i+1}</div>
+              <div class="gab-topic">${escHtml(q.topic_name||'—')}<span style="font-size:10px;font-weight:500;color:var(--sub);margin-left:6px">${escHtml(q.subject_name||'')}</span></div>
+              <div class="gab-result-badge ${badgeClass}">${badgeText}</div>
+            </div>
+            ${q.statement ? `<div class="gab-stmt">${escHtml(q.statement)}</div>` : ''}
+            ${alts.length ? `<div class="gab-alts">${alts.map((alt,ai) => {
+              const letter = String.fromCharCode(65+ai);
+              const isCorrect = letter === corrAlt;
+              const isChosen  = chosen && chosen.toUpperCase() === letter;
+              const cls = isCorrect ? 'correct' : (isChosen && !isCorrect) ? 'wrong' : '';
+              const marker = isCorrect ? ' ✓' : (isChosen && !isCorrect) ? ' ✗' : '';
+              return `<div class="gab-alt ${cls}"><span class="gab-alt-ltr">${letter})</span><span>${escHtml(alt.replace(/^[A-E]\)\s*/i,''))}${marker}</span></div>`;
+            }).join('')}</div>` : ''}
+            ${q.explanation ? `<div class="gab-explanation">💡 ${escHtml(q.explanation)}</div>` : ''}
+            ${chosen ? `<div style="font-size:11px;color:var(--sub);margin-top:6px">Sua resposta: <strong>${chosen.toUpperCase()}</strong> · Gabarito: <strong>${corrAlt||'—'}</strong></div>` : ''}
+          </div>`;
+        }).join('');
+      }
+
+      // hide per-topic breakdown (already in gabarito)
+      const topicEl = document.getElementById('sim-res-by-topic');
+      if (topicEl) topicEl.innerHTML = '<div style="font-size:12px;color:var(--sub);padding:8px 0">Ver Gabarito Comentado abaixo ↓</div>';
+
+    } else {
+      // Topics mode
+      const selected = _simTopics._selected;
+      const answers  = _simTopics._answers;
+
+      // build questions payload (B5)
+      const questions = selected.map((t, i) => ({
+        topic_name:   t.topic_name,
+        subject_name: t.subject_name,
+        correct:      answers[i] === 'correct' ? 'true' : 'false',
+        statement:    document.getElementById(`sim-stmt-${i}`)?.value?.trim() || '',
+        notes:        document.getElementById(`sim-obs-${i}`)?.value?.trim()  || '',
+      }));
+
+      try {
+        await fetchJSON('/api/mock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source, date: dateVal ? dateVal + 'T12:00:00' : null, questions }),
+        });
+      } catch(e) { toast('Erro ao salvar: ' + e.message, 'error'); }
+
+      total    = questions.length;
+      answered = Object.keys(answers).length;
+      correct  = Object.values(answers).filter(v => v === 'correct').length;
+      wrong    = answered - correct;
+      errPct   = answered ? Math.round(wrong / answered * 100) : 0;
+
+      bySubj = {};
+      selected.forEach((t, i) => {
+        if (!bySubj[t.subject_name]) bySubj[t.subject_name] = { total: 0, correct: 0, wrong: 0, unanswered: 0 };
+        const a = answers[i];
+        if (a === 'correct') { bySubj[t.subject_name].correct++; bySubj[t.subject_name].total++; }
+        else if (a === 'wrong') { bySubj[t.subject_name].wrong++; bySubj[t.subject_name].total++; }
+        else bySubj[t.subject_name].unanswered++;
+      });
+
+      if (gabSection) gabSection.style.display = 'none';
+
+      // D4: per-topic breakdown
+      const topicEl = document.getElementById('sim-res-by-topic');
+      if (topicEl) {
+        topicEl.innerHTML = selected.map((t, i) => {
+          const a = answers[i];
+          const icon = a === 'correct' ? '✅' : a === 'wrong' ? '❌' : '⬜';
+          const col  = a === 'correct' ? 'var(--green)' : a === 'wrong' ? 'var(--red)' : 'var(--sub)';
+          return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+            <span style="font-size:14px;flex-shrink:0">${icon}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.topic_name}</div>
+              <div style="font-size:10px;color:var(--sub)">${t.subject_name}</div>
+            </div>
+            <span style="font-size:11px;font-weight:800;color:${col};flex-shrink:0">${a === 'correct' ? 'Certo' : a === 'wrong' ? 'Errado' : 'N/R'}</span>
+          </div>`;
+        }).join('') || '<div class="empty">Sem dados.</div>';
+      }
+    }
 
     // show results
     document.getElementById('sim-step-exam').classList.remove('active');
@@ -8958,7 +9334,6 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     document.getElementById('sim-res-by-subject').innerHTML = Object.entries(bySubj)
       .sort((a, b) => b[1].total - a[1].total)
       .map(([name, d]) => {
-        const ep  = d.total ? Math.round(d.wrong / d.total * 100) : 0;
         const acc = d.total ? Math.round(d.correct / d.total * 100) : 0;
         const color = acc >= 70 ? 'var(--green)' : acc >= 50 ? '#F59E0B' : 'var(--red)';
         return `<div class="sim-subj-row">
@@ -8972,24 +9347,6 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
           <div class="sim-subj-stat" style="color:${color};font-weight:800">${acc}%</div>
         </div>`;
       }).join('') || '<div class="empty">Sem dados.</div>';
-
-    // D4: per-topic breakdown
-    const topicEl = document.getElementById('sim-res-by-topic');
-    if (topicEl) {
-      topicEl.innerHTML = selected.map((t, i) => {
-        const ans = answers[i];
-        const icon = ans === 'correct' ? '✅' : ans === 'wrong' ? '❌' : '⬜';
-        const col  = ans === 'correct' ? 'var(--green)' : ans === 'wrong' ? 'var(--red)' : 'var(--sub)';
-        return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
-          <span style="font-size:14px;flex-shrink:0">${icon}</span>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.topic_name}</div>
-            <div style="font-size:10px;color:var(--sub)">${t.subject_name}</div>
-          </div>
-          <span style="font-size:11px;font-weight:800;color:${col};flex-shrink:0">${ans === 'correct' ? 'Certo' : ans === 'wrong' ? 'Errado' : 'N/R'}</span>
-        </div>`;
-      }).join('') || '<div class="empty">Sem dados.</div>';
-    }
 
     toast('✓ Simulado salvo!');
     loadStats(); // refresh streak/week counters
@@ -9022,7 +9379,12 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     document.getElementById('sim-step-config').classList.add('active');
     clearInterval(_simTimerInterval);
     _simTopics._answers = {};
+    _simBancoQuestions = [];
+    _simBancoAnswers = {};
     _simStartTime = null; _simElapsedSec = 0;
+    // hide gabarito
+    const g = document.getElementById('sim-gabarito-section');
+    if (g) g.style.display = 'none';
   }
 
   // ── Relatório Semanal ──────────────────────────────────────────────────────
@@ -10766,6 +11128,302 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
       toast('✅ Link salvo!');
       _invalidateCache('/api/library');
       loadBiblioteca();
+    } catch(e) { toast('Erro: ' + e.message, 'error'); }
+  }
+
+  // ── Mapa do Edital ────────────────────────────────────────────────────────────
+  async function loadEdital() {
+    const examSel = document.getElementById('edital-exam-sel');
+    const examName = examSel?.value || '';
+    try {
+      const [coverage, exams] = await Promise.all([
+        fetchJSON('/api/editorial/coverage' + (examName ? `?exam_name=${encodeURIComponent(examName)}` : '')),
+        fetchJSON('/api/editorial/exams'),
+      ]);
+      // populate exam selector
+      if (examSel) {
+        const cur = examSel.value;
+        examSel.innerHTML = '<option value="">Todos os editais</option>' +
+          exams.map(e => `<option value="${e.exam_name}" ${e.exam_name===cur?'selected':''}>${e.exam_name} (${e.total})</option>`).join('');
+      }
+      // exams list in sidebar
+      const examsList = document.getElementById('edital-exams-list');
+      if (examsList) {
+        if (!exams.length) {
+          examsList.innerHTML = '<div class="empty" style="font-size:12px">Nenhum edital importado</div>';
+        } else {
+          examsList.innerHTML = exams.map(e => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-size:13px;font-weight:700">${e.exam_name}</div>
+                <div style="font-size:11px;color:var(--sub)">${e.total} tópicos</div>
+              </div>
+              <button onclick="deleteEditalExam('${e.exam_name.replace(/'/g,"\\'")}',event)" style="background:none;border:none;cursor:pointer;color:var(--sub);font-size:14px" title="Remover">🗑</button>
+            </div>`).join('');
+        }
+      }
+      // coverage bar
+      const bar = document.getElementById('edital-coverage-bar');
+      if (bar && coverage.total > 0) {
+        bar.style.display = 'block';
+        document.getElementById('edital-pct-label').textContent = coverage.pct + '%';
+        document.getElementById('edital-pct-bar').style.width = coverage.pct + '%';
+        document.getElementById('edital-pct-bar').style.background =
+          coverage.pct >= 80 ? '#22C55E' : coverage.pct >= 50 ? '#F59E0B' : '#E8362A';
+        document.getElementById('edital-covered-label').textContent = `${coverage.covered} cobertos`;
+        document.getElementById('edital-total-label').textContent = `${coverage.total} total`;
+      }
+      // subject breakdown
+      const container = document.getElementById('edital-subjects');
+      if (!container) return;
+      if (!coverage.by_subject?.length) {
+        container.innerHTML = `<div class="empty" style="padding:40px 0;text-align:center">
+          <div style="font-size:36px;margin-bottom:12px">🗺️</div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:6px">Nenhum edital importado</div>
+          <div style="font-size:13px;color:var(--sub);margin-bottom:16px">Importe um CSV com os tópicos do concurso</div>
+          <button onclick="openEditalImport()" style="padding:10px 20px;border-radius:10px;border:none;background:var(--red);color:#fff;font-weight:700;cursor:pointer">⬆ Importar CSV</button>
+        </div>`;
+        return;
+      }
+      container.innerHTML = coverage.by_subject.map(s => {
+        const pct = s.pct;
+        const barColor = pct >= 80 ? '#22C55E' : pct >= 50 ? '#F59E0B' : '#E8362A';
+        return `
+          <div style="background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
+              <div style="font-size:14px;font-weight:800">${s.subject}</div>
+              <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+                ${s.weight ? `<span style="font-size:11px;color:var(--sub)">${s.weight}%</span>` : ''}
+                <span style="font-size:14px;font-weight:900;color:${barColor}">${pct}%</span>
+                <span style="font-size:11px;color:var(--sub)">${s.covered}/${s.total}</span>
+              </div>
+            </div>
+            <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+              <div style="height:100%;width:${pct}%;background:${barColor};border-radius:4px;transition:width .5s"></div>
+            </div>
+          </div>`;
+      }).join('');
+    } catch(e) { toast('Erro ao carregar edital: ' + e.message, 'error'); }
+  }
+
+  function openEditalImport() {
+    document.getElementById('edital-import-result').textContent = '';
+    document.getElementById('edital-import-modal').style.display = 'flex';
+  }
+  function closeEditalImport() { document.getElementById('edital-import-modal').style.display = 'none'; }
+
+  async function submitEditalCSV() {
+    const name = document.getElementById('edital-exam-name-input').value.trim();
+    const file = document.getElementById('edital-csv-file').files[0];
+    const result = document.getElementById('edital-import-result');
+    if (!name) { result.textContent = 'Nome do concurso obrigatório'; result.style.color='var(--red)'; return; }
+    if (!file) { result.textContent = 'Selecione o arquivo CSV'; result.style.color='var(--red)'; return; }
+    result.textContent = 'Importando...'; result.style.color = 'var(--sub)';
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('exam_name', name);
+      const r = await fetch('/api/editorial/import-csv', { method: 'POST', body: form });
+      const data = await r.json();
+      result.textContent = `✅ ${data.imported} tópicos importados!`; result.style.color = '#22C55E';
+      _invalidateCache('/api/editorial');
+      setTimeout(() => { closeEditalImport(); loadEdital(); }, 1200);
+    } catch(e) { result.textContent = 'Erro: ' + e.message; result.style.color = 'var(--red)'; }
+  }
+
+  async function deleteEditalExam(examName, e) {
+    e?.stopPropagation();
+    if (!confirm(`Remover edital "${examName}"?`)) return;
+    await fetchJSON(`/api/editorial/exam/${encodeURIComponent(examName)}`, { method: 'DELETE' });
+    _invalidateCache('/api/editorial');
+    toast('Edital removido');
+    loadEdital();
+  }
+
+  function downloadEditalTemplate(e) {
+    e.preventDefault();
+    const csv = 'materia,topico,peso\nCardiologia,Insuficiência Cardíaca,5.2\nCardiologia,FA e Flutter,3.1\nPneumologia,DPOC,4.0\n';
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = 'template_edital.csv'; a.click();
+  }
+
+  // ── Banco de Questões ─────────────────────────────────────────────────────────
+  let _bancoItems = [], _qbCurrentId = null, _qbAnswered = false, _qbCorrectAlt = null;
+
+  async function loadBanco() {
+    const list = document.getElementById('banco-list');
+    if (!list) return;
+    list.innerHTML = '<div class="empty"><span class="spinner"></span> Carregando...</div>';
+    try {
+      const subjectId = document.getElementById('banco-subject-filter')?.value || '';
+      const [items, stats, subjects] = await Promise.all([
+        fetchJSON('/api/questions/bank' + (subjectId ? `?subject_id=${subjectId}` : '')),
+        fetchJSON('/api/questions/bank/stats').catch(() => ({})),
+        fetchJSON('/api/subjects'),
+      ]);
+      _bancoItems = items;
+      // populate subject filter
+      const sel = document.getElementById('banco-subject-filter');
+      if (sel && subjects.length) {
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">Todas as matérias</option>' +
+          subjects.map(s => `<option value="${s.id}" ${String(s.id)===cur?'selected':''}>${s.name}</option>`).join('');
+      }
+      // populate topic dropdown in add modal
+      const topicSel = document.getElementById('qb-add-topic');
+      if (topicSel && subjects.length) {
+        const allTopics = await fetchJSON('/api/topics').catch(() => []);
+        topicSel.innerHTML = '<option value="">Selecione o tópico *</option>' +
+          allTopics.map(t => `<option value="${t.id}">[${t.subject_name}] ${t.name}</option>`).join('');
+      }
+      // stats bar
+      const statsBar = document.getElementById('banco-stats-bar');
+      if (statsBar) {
+        statsBar.innerHTML = [
+          ['🧩', stats.total || 0, 'Total'],
+          ['✅', stats.answered || 0, 'Respondidas'],
+          ['🎯', (stats.accuracy || 0) + '%', 'Acurácia'],
+        ].map(([ic, v, lb]) => `
+          <div style="background:var(--card);border-radius:10px;box-shadow:var(--shadow);padding:10px 16px;display:flex;align-items:center;gap:8px">
+            <span style="font-size:20px">${ic}</span>
+            <div><div style="font-size:16px;font-weight:900">${v}</div><div style="font-size:11px;color:var(--sub)">${lb}</div></div>
+          </div>`).join('');
+      }
+      // render list
+      if (!items.length) {
+        list.innerHTML = `<div class="empty" style="padding:40px 0;text-align:center">
+          <div style="font-size:36px;margin-bottom:12px">🧩</div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:6px">Nenhuma questão no banco</div>
+          <div style="font-size:13px;color:var(--sub);margin-bottom:16px">Adicione questões com alternativas para praticar</div>
+          <button onclick="openAddQBModal()" style="padding:10px 20px;border-radius:10px;border:none;background:var(--red);color:#fff;font-weight:700;cursor:pointer">+ Adicionar questão</button>
+        </div>`;
+        return;
+      }
+      const DIFF = {facil:'🟢',medio:'🟡',dificil:'🔴'};
+      list.innerHTML = items.map(q => {
+        const answered = q.chosen_alt != null;
+        const correct  = q.correct;
+        const statusColor = answered ? (correct ? '#22C55E' : '#E8362A') : 'var(--sub)';
+        const statusIcon  = answered ? (correct ? '✅' : '❌') : '⬜';
+        return `<div style="background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;cursor:pointer" onclick="openQBAnswer(${q.id})">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+            <div style="font-size:11px;font-weight:700;color:var(--red)">${q.subject_name || ''} › ${q.topic_name || ''}</div>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              <span>${DIFF[q.difficulty]||'🟡'}</span>
+              <span style="font-size:11px;color:var(--sub)">${q.source||''}${q.year?' · '+q.year:''}</span>
+              <span style="font-size:18px">${statusIcon}</span>
+            </div>
+          </div>
+          <div style="font-size:13px;line-height:1.6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical">${q.statement||'(sem enunciado)'}</div>
+          ${answered ? `<div style="font-size:11px;margin-top:6px;color:${statusColor};font-weight:700">${correct?'Acertou':'Errou'} · Marcou ${q.chosen_alt} · Correto ${q.correct_alt}</div>` : ''}
+        </div>`;
+      }).join('');
+    } catch(e) { list.innerHTML = `<div class="empty">Erro: ${e.message}</div>`; }
+  }
+
+  function openQBAnswer(id) {
+    const q = _bancoItems.find(i => i.id === id);
+    if (!q) return;
+    _qbCurrentId = id;
+    _qbAnswered = q.chosen_alt != null;
+    _qbCorrectAlt = q.correct_alt;
+    document.getElementById('qb-modal-ctx').textContent = [q.subject_name, q.topic_name].filter(Boolean).join(' › ');
+    document.getElementById('qb-modal-source').textContent = [q.source, q.year].filter(Boolean).join(' · ');
+    document.getElementById('qb-modal-statement').textContent = q.statement || '';
+    const alts = q.alternatives || [];
+    const LETTERS = ['A','B','C','D','E'];
+    document.getElementById('qb-modal-alts').innerHTML = alts.map((alt, i) => {
+      const letter = LETTERS[i] || String(i+1);
+      let bg = 'var(--bg)', border = 'var(--border)', color = 'var(--text)';
+      if (_qbAnswered) {
+        if (letter === q.correct_alt) { bg='rgba(34,197,94,.15)'; border='#22C55E'; color='#22C55E'; }
+        else if (letter === q.chosen_alt && !q.correct) { bg='rgba(232,54,42,.1)'; border='var(--red)'; color='var(--red)'; }
+      }
+      return `<button onclick="answerQB('${letter}')" data-letter="${letter}"
+        style="text-align:left;padding:11px 14px;border-radius:10px;border:1.5px solid ${border};background:${bg};color:${color};cursor:pointer;font-size:13px;transition:all .15s;font-weight:${letter===q.correct_alt&&_qbAnswered?'700':'400'}">
+        <strong>${letter})</strong> ${alt.replace(/^[A-E]\)\s*/i,'')}
+      </button>`;
+    }).join('');
+    const resultEl = document.getElementById('qb-modal-result');
+    const explEl   = document.getElementById('qb-modal-explanation');
+    if (_qbAnswered) {
+      resultEl.style.display = 'block';
+      resultEl.style.background = q.correct ? 'rgba(34,197,94,.12)' : 'rgba(232,54,42,.1)';
+      resultEl.style.color = q.correct ? '#22C55E' : 'var(--red)';
+      resultEl.textContent = q.correct ? `✅ Correto! Alternativa ${q.correct_alt}` : `❌ Incorreto. Você marcou ${q.chosen_alt}. Resposta: ${q.correct_alt}`;
+      if (q.explanation) { explEl.style.display = 'block'; explEl.textContent = '💡 ' + q.explanation; }
+      else explEl.style.display = 'none';
+    } else {
+      resultEl.style.display = 'none';
+      explEl.style.display = 'none';
+    }
+    document.getElementById('qb-answer-modal').style.display = 'flex';
+  }
+
+  async function answerQB(letter) {
+    if (_qbAnswered) return;
+    _qbAnswered = true;
+    try {
+      const data = await fetchJSON(`/api/questions/${_qbCurrentId}/answer`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ chosen_alt: letter }),
+      });
+      _invalidateCache('/api/questions');
+      // update item in local cache
+      const item = _bancoItems.find(i => i.id === _qbCurrentId);
+      if (item) { item.chosen_alt = letter; item.correct = data.correct; item.correct_alt = data.correct_alt; }
+      // re-render answer modal
+      openQBAnswer(_qbCurrentId);
+    } catch(e) { toast('Erro: ' + e.message, 'error'); }
+  }
+
+  function closeQBModal() { document.getElementById('qb-answer-modal').style.display = 'none'; }
+
+  function openAddQBModal() {
+    // init alternativas A-E
+    const altsDiv = document.getElementById('qb-add-alts');
+    const LETTERS = ['A','B','C','D','E'];
+    altsDiv.innerHTML = LETTERS.map(l => `
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="radio" name="qb-correct-alt" value="${l}" id="qb-alt-r-${l}">
+        <label for="qb-alt-r-${l}" style="font-weight:700;width:18px">${l})</label>
+        <input type="text" id="qb-alt-${l}" placeholder="Alternativa ${l}" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+      </div>`).join('');
+    document.getElementById('qb-add-statement').value = '';
+    document.getElementById('qb-add-explanation').value = '';
+    document.getElementById('qb-add-source').value = '';
+    document.getElementById('qb-add-year').value = '';
+    document.getElementById('qb-add-modal').style.display = 'flex';
+  }
+
+  function closeAddQBModal() { document.getElementById('qb-add-modal').style.display = 'none'; }
+
+  async function saveQBQuestion() {
+    const topicId = parseInt(document.getElementById('qb-add-topic').value);
+    const statement = document.getElementById('qb-add-statement').value.trim();
+    if (!topicId) { toast('Selecione o tópico', 'error'); return; }
+    if (!statement) { toast('Enunciado obrigatório', 'error'); return; }
+    const LETTERS = ['A','B','C','D','E'];
+    const alternatives = LETTERS.map(l => `${l}) ${document.getElementById('qb-alt-'+l)?.value.trim()||''}`).filter(a => a.length > 3);
+    const correct_alt = document.querySelector('input[name="qb-correct-alt"]:checked')?.value;
+    if (!correct_alt) { toast('Marque a alternativa correta', 'error'); return; }
+    if (alternatives.length < 2) { toast('Mínimo 2 alternativas', 'error'); return; }
+    try {
+      await fetchJSON('/api/questions/bank', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          topic_id: topicId, statement, alternatives, correct_alt,
+          explanation: document.getElementById('qb-add-explanation').value || null,
+          source: document.getElementById('qb-add-source').value || null,
+          year: parseInt(document.getElementById('qb-add-year').value) || null,
+          difficulty: document.getElementById('qb-add-diff').value,
+        }),
+      });
+      toast('✅ Questão adicionada');
+      closeAddQBModal();
+      _invalidateCache('/api/questions');
+      loadBanco();
     } catch(e) { toast('Erro: ' + e.message, 'error'); }
   }
 

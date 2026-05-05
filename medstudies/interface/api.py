@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from sqlalchemy import func
 from medstudies.persistence.database import get_session, init_db
-from medstudies.persistence.models import DailyPlan, FlashCard, LibraryItem, Question, StudySession, Subject, Tag, Topic, TopicReview
+from medstudies.persistence.models import DailyPlan, EditorialTopic, FlashCard, LibraryItem, Question, StudySession, Subject, Tag, Topic, TopicReview
 from medstudies.engine.planner import DailyPlanBuilder, DailyStudyPlan
 from medstudies.engine.scorer import TopicScorer
 from medstudies.engine.weekly_planner import WeeklyPlanBuilder
@@ -3447,4 +3447,236 @@ def library_stats():
             "by_type": {r[0]: r[1] for r in rows},
             "total": sum(r[1] for r in rows),
             "total_size_mb": round(total_size / 1024 / 1024, 1),
+        }
+
+
+
+# ── Edital (Curriculum Map) ────────────────────────────────────────────────────
+
+class EditorialTopicCreate(BaseModel):
+    exam_name: str
+    subject_name: str
+    topic_name: str
+    weight_pct: float = 0.0
+    topic_id: int | None = None
+
+
+@app.get("/api/editorial")
+def editorial_list(exam_name: str | None = None):
+    with get_session() as db:
+        q = db.query(EditorialTopic)
+        if exam_name:
+            q = q.filter(EditorialTopic.exam_name == exam_name)
+        items = q.order_by(EditorialTopic.subject_name, EditorialTopic.topic_name).all()
+        return [
+            {
+                "id": i.id, "exam_name": i.exam_name,
+                "subject_name": i.subject_name, "topic_name": i.topic_name,
+                "weight_pct": i.weight_pct, "topic_id": i.topic_id,
+                "covered": i.topic_id is not None,
+            }
+            for i in items
+        ]
+
+
+@app.get("/api/editorial/exams")
+def editorial_exams():
+    with get_session() as db:
+        rows = db.query(EditorialTopic.exam_name, func.count(EditorialTopic.id))\
+                 .group_by(EditorialTopic.exam_name).all()
+        return [{"exam_name": r[0], "total": r[1]} for r in rows]
+
+
+@app.get("/api/editorial/coverage")
+def editorial_coverage(exam_name: str | None = None):
+    with get_session() as db:
+        q = db.query(EditorialTopic)
+        if exam_name:
+            q = q.filter(EditorialTopic.exam_name == exam_name)
+        items = q.all()
+        total = len(items)
+        covered = sum(1 for i in items if i.topic_id)
+        by_subject: dict = {}
+        for i in items:
+            s = by_subject.setdefault(i.subject_name, {"total": 0, "covered": 0, "weight": 0.0})
+            s["total"] += 1
+            s["weight"] += i.weight_pct or 0
+            if i.topic_id:
+                s["covered"] += 1
+        return {
+            "total": total, "covered": covered,
+            "pct": round(covered / total * 100, 1) if total else 0,
+            "by_subject": [
+                {
+                    "subject": k,
+                    "total": v["total"],
+                    "covered": v["covered"],
+                    "pct": round(v["covered"] / v["total"] * 100, 1) if v["total"] else 0,
+                    "weight": round(v["weight"], 1),
+                }
+                for k, v in sorted(by_subject.items(), key=lambda x: -x[1]["weight"])
+            ],
+        }
+
+
+@app.post("/api/editorial")
+def editorial_create(body: EditorialTopicCreate):
+    with get_session() as db:
+        item = EditorialTopic(**body.model_dump())
+        db.add(item); db.commit(); db.refresh(item)
+        return {"id": item.id}
+
+
+@app.post("/api/editorial/import-csv")
+async def editorial_import_csv(
+    file: UploadFile = File(...),
+    exam_name: str = Form(...),
+):
+    content = (await file.read()).decode("utf-8-sig")
+    import csv as csv_m, io
+    reader = csv_m.DictReader(io.StringIO(content))
+    rows = list(reader)
+    with get_session() as db:
+        all_topics = db.query(Topic).all()
+        topic_map = {t.name.lower().strip(): t.id for t in all_topics}
+        imported = 0
+        for row in rows:
+            subj = (row.get("subject_name") or row.get("materia") or "").strip()
+            top  = (row.get("topic_name") or row.get("topico") or "").strip()
+            wt   = float(row.get("weight_pct") or row.get("peso") or 0)
+            if not subj or not top:
+                continue
+            matched_id = topic_map.get(top.lower())
+            item = EditorialTopic(
+                exam_name=exam_name, subject_name=subj,
+                topic_name=top, weight_pct=wt, topic_id=matched_id,
+            )
+            db.add(item)
+            imported += 1
+        db.commit()
+    return {"imported": imported}
+
+
+@app.patch("/api/editorial/{item_id}/match")
+def editorial_match(item_id: int, body: dict):
+    with get_session() as db:
+        item = db.query(EditorialTopic).get(item_id)
+        if not item:
+            raise HTTPException(404)
+        item.topic_id = body.get("topic_id")
+        db.commit()
+        return {"ok": True}
+
+
+@app.delete("/api/editorial/exam/{exam_name}")
+def editorial_delete_exam(exam_name: str):
+    with get_session() as db:
+        db.query(EditorialTopic).filter(EditorialTopic.exam_name == exam_name).delete()
+        db.commit()
+        return {"ok": True}
+
+
+@app.delete("/api/editorial/{item_id}")
+def editorial_delete(item_id: int):
+    with get_session() as db:
+        item = db.query(EditorialTopic).get(item_id)
+        if not item:
+            raise HTTPException(404)
+        db.delete(item); db.commit()
+        return {"ok": True}
+
+
+# ── Question Bank (MCQ with alternatives) ─────────────────────────────────────
+
+class QuestionBankCreate(BaseModel):
+    topic_id: int
+    statement: str
+    alternatives: list[str]
+    correct_alt: str
+    explanation: str | None = None
+    source: str | None = None
+    year: int | None = None
+    difficulty: str = "medio"
+
+
+def _fmt_question(q: Question, db) -> dict:
+    import json as _json
+    topic = db.query(Topic).get(q.topic_id) if q.topic_id else None
+    subject = db.query(Subject).get(topic.subject_id) if topic and topic.subject_id else None
+    return {
+        "id": q.id, "topic_id": q.topic_id,
+        "topic_name": topic.name if topic else None,
+        "subject_name": subject.name if subject else None,
+        "statement": q.statement,
+        "alternatives": _json.loads(q.alternatives) if q.alternatives else [],
+        "correct_alt": q.correct_alt,
+        "chosen_alt": q.chosen_alt,
+        "correct": q.correct,
+        "explanation": q.explanation,
+        "source": q.source, "year": q.year,
+        "difficulty": q.difficulty,
+        "answered_at": q.answered_at.isoformat() if q.answered_at else None,
+        "notes": q.notes,
+    }
+
+
+@app.get("/api/questions/bank")
+def question_bank_list(topic_id: int | None = None, subject_id: int | None = None, limit: int = 100):
+    with get_session() as db:
+        q = db.query(Question).filter(Question.alternatives.isnot(None))
+        if topic_id:
+            q = q.filter(Question.topic_id == topic_id)
+        if subject_id:
+            q = q.join(Topic).filter(Topic.subject_id == subject_id)
+        items = q.order_by(Question.answered_at.desc()).limit(limit).all()
+        return [_fmt_question(i, db) for i in items]
+
+
+@app.post("/api/questions/bank")
+def question_bank_create(body: QuestionBankCreate):
+    import json as _json
+    with get_session() as db:
+        q = Question(
+            topic_id=body.topic_id,
+            statement=body.statement,
+            alternatives=_json.dumps(body.alternatives, ensure_ascii=False),
+            correct_alt=body.correct_alt.upper(),
+            correct=False,
+            explanation=body.explanation,
+            source=body.source, year=body.year,
+            difficulty=body.difficulty,
+        )
+        db.add(q); db.commit(); db.refresh(q)
+        return {"id": q.id}
+
+
+@app.post("/api/questions/{question_id}/answer")
+def question_answer(question_id: int, body: dict):
+    chosen = (body.get("chosen_alt") or "").upper()
+    with get_session() as db:
+        q = db.query(Question).get(question_id)
+        if not q:
+            raise HTTPException(404)
+        q.chosen_alt = chosen
+        q.correct = (chosen == (q.correct_alt or "").upper())
+        q.answered_at = datetime.utcnow()
+        if body.get("notes"):
+            q.notes = body["notes"]
+        db.commit()
+        return {"correct": q.correct, "correct_alt": q.correct_alt, "explanation": q.explanation}
+
+
+@app.get("/api/questions/bank/stats")
+def question_bank_stats():
+    with get_session() as db:
+        total = db.query(func.count(Question.id)).filter(Question.alternatives.isnot(None)).scalar() or 0
+        answered = db.query(func.count(Question.id)).filter(
+            Question.alternatives.isnot(None), Question.chosen_alt.isnot(None)
+        ).scalar() or 0
+        correct = db.query(func.count(Question.id)).filter(
+            Question.alternatives.isnot(None), Question.correct == True
+        ).scalar() or 0
+        return {
+            "total": total, "answered": answered, "correct": correct,
+            "accuracy": round(correct / answered * 100, 1) if answered else 0,
         }

@@ -1787,6 +1787,22 @@
       <div id="review-due-card" style="display:none"></div>
       <div id="countdown-card" style="display:none"></div>
 
+      <!-- Next SM-2 widget -->
+      <div id="next-sm2-widget" style="display:none;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 18px;margin-bottom:10px;cursor:pointer" onclick="navTo('page-agenda','nav-agenda');loadAgenda()">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="font-size:22px">🧠</div>
+          <div style="flex:1">
+            <div style="font-size:12px;font-weight:800;color:var(--text)">Próxima Revisão SM-2</div>
+            <div id="next-sm2-topic" style="font-size:13px;font-weight:700;color:var(--primary);margin-top:2px">—</div>
+            <div id="next-sm2-time" style="font-size:11px;color:var(--sub);margin-top:1px">—</div>
+          </div>
+          <div style="text-align:right">
+            <div id="next-sm2-count" style="font-size:20px;font-weight:900;color:var(--primary)">—</div>
+            <div style="font-size:10px;color:var(--sub);font-weight:600">pendentes</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Z5: Questão do Dia -->
       <div id="qod-card" style="display:none;margin-bottom:10px;border-radius:10px;border:1.5px solid var(--primary);background:var(--card);overflow:hidden">
         <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border)">
@@ -5696,6 +5712,40 @@
     } catch(e) { /* anki not running */ }
   }
 
+  // ── Next SM-2 widget ───────────────────────────────────────────────────────
+  async function loadNextSM2Widget() {
+    const widget = document.getElementById('next-sm2-widget');
+    if (!widget) return;
+    try {
+      const [reviewData, agendaData] = await Promise.all([
+        fetchJSON('/api/reviews/count').catch(() => ({ due: 0 })),
+        fetchJSON('/api/agenda/sm2?days=7').catch(() => []),
+      ]);
+      const total = reviewData.due || 0;
+      if (!total && (!agendaData || !agendaData.length)) { widget.style.display = 'none'; return; }
+      widget.style.display = 'block';
+      document.getElementById('next-sm2-count').textContent = total;
+
+      // find next upcoming topic (first due in agenda)
+      const upcoming = agendaData.find(item => item.due_date);
+      if (upcoming) {
+        document.getElementById('next-sm2-topic').textContent = upcoming.topic_name || '—';
+        const due = new Date(upcoming.due_date);
+        const now  = new Date();
+        const diffH = Math.round((due - now) / 3600000);
+        let timeStr;
+        if (diffH < 0)       timeStr = 'Vencido';
+        else if (diffH < 1)  timeStr = 'Em menos de 1h';
+        else if (diffH < 24) timeStr = `Em ${diffH}h`;
+        else                 timeStr = `Em ${Math.ceil(diffH/24)} dia(s)`;
+        document.getElementById('next-sm2-time').textContent = timeStr;
+      } else if (total > 0) {
+        document.getElementById('next-sm2-topic').textContent = `${total} tópico(s) prontos agora`;
+        document.getElementById('next-sm2-time').textContent = 'Clique para iniciar revisão';
+      }
+    } catch(e) { widget.style.display = 'none'; }
+  }
+
   // ── Edital ─────────────────────────────────────────────────────────────────
   async function applyEdital() {
     const templateId = document.getElementById('cfg-edital').value;
@@ -6504,13 +6554,16 @@ ${(plan.items || []).map((item, i) => `<tr>
       document.getElementById('activity-list').innerHTML = sorted.length
         ? sorted.map(([name, info], i) => {
             const c = ACT_COLORS[i % ACT_COLORS.length];
-            return `<div class="activity-item">
+            return `<div class="activity-item" style="cursor:default">
               <div class="activity-dot" style="background:${c}"></div>
               <div class="activity-info">
                 <div class="activity-name">${name}</div>
                 <div class="activity-meta">${info.topics} tópico${info.topics > 1 ? 's' : ''} · ${info.withData} com dados</div>
               </div>
-              <div class="activity-score" style="background:${c}22;color:${c}">${Math.round(info.priority * 100)}</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <div class="activity-score" style="background:${c}22;color:${c}">${Math.round(info.priority * 100)}</div>
+                <button onclick="startSubjectReview(${JSON.stringify(name)})" title="Revisar ${name}" style="background:${c}22;color:${c};border:1px solid ${c}44;border-radius:7px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">▶</button>
+              </div>
             </div>`;
           }).join('')
         : `<div style="text-align:center;padding:20px 16px"><div style="font-size:28px;margin-bottom:8px">📚</div><div style="font-size:13px;font-weight:700;color:var(--text)">Nenhum tópico cadastrado</div><div style="font-size:11px;color:var(--sub);margin:4px 0 12px">Adicione disciplinas e tópicos para começar</div><button onclick="navTo('page-config','nav-config')" style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">⚙️ Configurar</button></div>`;
@@ -6520,6 +6573,27 @@ ${(plan.items || []).map((item, i) => `<tr>
       document.getElementById('prog-topics-pct').textContent = pct + '%';
       document.getElementById('prog-topics-bar').style.width = pct + '%';
     } catch(e) { console.error('activities:', e); }
+  }
+
+  // ── Start subject-focused review from dashboard ───────────────────────────
+  function startSubjectReview(subjectName) {
+    navTo('page-review', 'nav-review');
+    // wait for page to render, then set filter and reload
+    setTimeout(() => {
+      const sel = document.getElementById('rv-subject-filter');
+      if (!sel) return;
+      // populate options if needed (initReviewSession will do it, but set value now)
+      let found = false;
+      for (const opt of sel.options) {
+        if (opt.value === subjectName) { sel.value = subjectName; found = true; break; }
+      }
+      if (!found) {
+        const o = new Option(subjectName, subjectName);
+        sel.add(o);
+        sel.value = subjectName;
+      }
+      setReviewMode('all');
+    }, 80);
   }
 
   // ── Notas por Tópico ──────────────────────────────────────────────────────
@@ -9108,6 +9182,7 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     loadSessionStats();
     loadAllTags();
     checkSM2Due();
+    loadNextSM2Widget();
     loadXP();
     initReminder();
     _loadDailyGoalInputs();

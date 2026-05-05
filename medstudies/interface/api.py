@@ -59,26 +59,23 @@ def service_worker():
 
 @app.get("/static/icon-{size}.png")
 def pwa_icon(size: str):
-    """Generate a simple SVG-based PNG placeholder icon."""
-    import struct, zlib
-    # Build a minimal 1x1 red PNG and redirect to SVG data URI isn't ideal,
-    # so we serve an SVG as PNG fallback via redirect to a data URI won't work.
-    # Instead serve a simple colored PNG programmatically.
-    dim = 512 if size == "512" else 192
-    # Create minimal valid PNG (solid red #E8362A square via raw pixel data)
-    r, g, b = 0xE8, 0x36, 0x2A
-    def png_chunk(name, data):
-        c = zlib.crc32(name + data) & 0xFFFFFFFF
-        return struct.pack('>I', len(data)) + name + data + struct.pack('>I', c)
-    raw = b''.join(b'\x00' + bytes([r, g, b] * dim) for _ in range(dim))
-    compressed = zlib.compress(raw)
-    sig = b'\x89PNG\r\n\x1a\n'
-    ihdr = png_chunk(b'IHDR', struct.pack('>IIBBBBB', dim, dim, 8, 2, 0, 0, 0))
-    idat = png_chunk(b'IDAT', compressed)
-    iend = png_chunk(b'IEND', b'')
-    png_bytes = sig + ihdr + idat + iend
+    """Serve pre-generated PNG icon from static directory."""
+    icon_path = INTERFACE_DIR / "static" / f"icon-{size}.png"
+    if icon_path.exists():
+        return FileResponse(icon_path, media_type="image/png")
+    # fallback: 192 if unknown size requested
+    fallback = INTERFACE_DIR / "static" / "icon-192.png"
+    if fallback.exists():
+        return FileResponse(fallback, media_type="image/png")
     from fastapi.responses import Response
-    return Response(content=png_bytes, media_type="image/png")
+    return Response(status_code=404)
+
+
+@app.get("/static/icon.svg")
+def pwa_icon_svg():
+    """Serve SVG icon."""
+    svg_path = INTERFACE_DIR / "static" / "icon.svg"
+    return FileResponse(svg_path, media_type="image/svg+xml")
 
 
 # ── Plan ──────────────────────────────────────────────────────────────────────

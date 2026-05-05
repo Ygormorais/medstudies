@@ -795,14 +795,21 @@
     }
 
     /* ── Flash Cards ── */
-    .fc-overlay { position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px); }
-    .fc-modal { background:var(--card);border-radius:20px;box-shadow:0 24px 64px rgba(0,0,0,.25);width:min(540px,92vw);padding:28px;position:relative; }
-    .fc-card-wrap { perspective:1000px;margin:20px 0;height:200px;cursor:pointer; }
-    .fc-card-inner { position:relative;width:100%;height:100%;transition:transform .5s;transform-style:preserve-3d; }
+    .fc-overlay { position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:1200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px); }
+    .fc-modal { background:var(--card);border-radius:24px;box-shadow:0 32px 80px rgba(0,0,0,.35);width:min(600px,96vw);padding:28px 32px 24px;position:relative; }
+    /* SM2 fullscreen modal */
+    .sm2-modal { background:var(--card);border-radius:24px;box-shadow:0 32px 80px rgba(0,0,0,.35);width:min(640px,98vw);padding:32px;position:relative;max-height:92vh;overflow-y:auto; }
+    .sm2-prog-bar { height:5px;background:var(--border);border-radius:3px;margin-bottom:20px;overflow:hidden; }
+    .sm2-prog-fill { height:100%;background:var(--red);border-radius:3px;transition:width .4s ease; }
+    .fc-card-wrap { perspective:1200px;margin:18px 0;min-height:220px;cursor:pointer;user-select:none; }
+    .fc-card-inner { position:relative;width:100%;height:100%;min-height:220px;transition:transform .45s cubic-bezier(.4,0,.2,1);transform-style:preserve-3d; }
     .fc-card-inner.flipped { transform:rotateY(180deg); }
-    .fc-face { position:absolute;inset:0;backface-visibility:hidden;border-radius:14px;display:flex;align-items:center;justify-content:center;padding:20px;text-align:center;font-size:16px;font-weight:700;line-height:1.5; }
-    .fc-front { background:linear-gradient(135deg,var(--red),#c0392b);color:#fff; }
+    .fc-face { position:absolute;inset:0;backface-visibility:hidden;border-radius:16px;display:flex;align-items:center;justify-content:center;padding:28px 24px;text-align:center;font-size:18px;font-weight:700;line-height:1.55;min-height:220px; }
+    .fc-front { background:linear-gradient(135deg,#E8362A,#b02010);color:#fff;box-shadow:0 6px 24px rgba(232,54,42,.3); }
     .fc-back  { background:var(--bg);border:2px solid var(--border);color:var(--text);transform:rotateY(180deg); }
+    .sm2-rate-btn { flex:1;min-width:90px;padding:11px 8px;border-radius:12px;border:none;cursor:pointer;font-size:12px;font-weight:800;transition:transform .1s,opacity .1s;display:flex;flex-direction:column;align-items:center;gap:2px; }
+    .sm2-rate-btn:active { transform:scale(.95); }
+    .sm2-key-badge { font-size:9px;opacity:.7;font-weight:600;border:1px solid rgba(255,255,255,.3);border-radius:4px;padding:1px 4px;margin-top:1px; }
     .fc-hint  { font-size:12px;color:var(--sub);text-align:center;margin-bottom:8px; }
     .fc-btn-row { display:flex;gap:10px;justify-content:center;margin-top:10px; }
     .fc-btn { padding:9px 22px;border-radius:10px;border:none;cursor:pointer;font-size:13px;font-weight:700; }
@@ -10086,8 +10093,7 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
       }
     } catch(e) {}
     _invalidateCache('/api/flashcards');
-    // Hard (quality<3) requeues
-    if (quality < 3) _sm2Queue.push({...card});
+    if (quality >= 3) _sm2Correct++; else { _sm2Queue.push({...card}); _sm2Requeued++; }
     _sm2Done++;
     _sm2Idx++;
     setTimeout(() => renderSM2(), 400);
@@ -10105,12 +10111,12 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
   }
 
   // ── SM-2 Flash Card Review ───────────────────────────────────────────────────
-  let _sm2Queue = [], _sm2Idx = 0, _sm2Flipped = false, _sm2Done = 0;
+  let _sm2Queue = [], _sm2Idx = 0, _sm2Flipped = false, _sm2Done = 0, _sm2Correct = 0, _sm2Requeued = 0;
 
   async function openSM2Review() {
     try {
       _sm2Queue = await fetchJSON('/api/flashcards/sm2?limit=20');
-      _sm2Idx = 0; _sm2Done = 0;
+      _sm2Idx = 0; _sm2Done = 0; _sm2Correct = 0; _sm2Requeued = 0;
       if (!_sm2Queue.length) { toast('Nenhum flash card criado ainda! Use 🃏 nos tópicos.'); return; }
       document.getElementById('sm2-overlay').style.display = 'flex';
       document.getElementById('sm2-done-msg').style.display = 'none';
@@ -10129,7 +10135,7 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
       if (!cards.length) { toast('Nenhum flash card neste tópico ainda.', 'error'); return; }
       closeTopicDrawer();
       _sm2Queue = cards.map(c => ({ ...c, topic_name: topicName, subject_name: subjectName }));
-      _sm2Idx = 0; _sm2Done = 0;
+      _sm2Idx = 0; _sm2Done = 0; _sm2Correct = 0; _sm2Requeued = 0;
       document.getElementById('sm2-overlay').style.display = 'flex';
       document.getElementById('sm2-done-msg').style.display = 'none';
       renderSM2();
@@ -10141,12 +10147,18 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     const n = _sm2Queue.length;
     if (_sm2Idx >= n) { showSM2Done(); return; }
     const c = _sm2Queue[_sm2Idx];
-    document.getElementById('sm2-progress').textContent = `${_sm2Idx + 1} de ${n} cards`;
-    document.getElementById('sm2-ctx').textContent = `${c.subject_name} › ${c.topic_name}`;
-    document.getElementById('sm2-front').innerHTML = c.question + (c.hint ? `<div style="margin-top:10px;font-size:12px;color:#F59E0B;font-weight:600;background:rgba(245,158,11,.1);border-radius:6px;padding:5px 8px">💡 ${c.hint}</div>` : '');
-    document.getElementById('sm2-back').textContent  = c.answer;
+    // progress
+    document.getElementById('sm2-progress').textContent = `${_sm2Idx + 1} / ${n}`;
+    document.getElementById('sm2-prog-fill').style.width = `${((_sm2Idx) / n) * 100}%`;
+    document.getElementById('sm2-ctx').textContent = [c.subject_name, c.topic_name].filter(Boolean).join(' › ');
+    // card content
+    document.getElementById('sm2-front').innerHTML = c.question
+      + (c.hint ? `<div style="margin-top:12px;font-size:13px;color:#FBBF24;font-weight:600;background:rgba(251,191,36,.12);border-radius:8px;padding:6px 10px">💡 ${c.hint}</div>` : '');
+    document.getElementById('sm2-back').innerHTML = `<div style="font-size:17px;line-height:1.6">${c.answer}</div>`;
     document.getElementById('sm2-card-inner').classList.remove('flipped');
     document.getElementById('sm2-rating-row').style.display = 'none';
+    document.getElementById('sm2-flip-hint').style.display = 'block';
+    document.getElementById('sm2-interval-hint').textContent = '';
     _sm2Flipped = false;
   }
 
@@ -10155,6 +10167,7 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     document.getElementById('sm2-card-inner').classList.toggle('flipped');
     _sm2Flipped = !_sm2Flipped;
     document.getElementById('sm2-rating-row').style.display = _sm2Flipped ? 'flex' : 'none';
+    document.getElementById('sm2-flip-hint').style.display = _sm2Flipped ? 'none' : 'block';
   }
 
   function showSM2Done() {
@@ -10162,16 +10175,75 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     document.getElementById('sm2-card-wrap').style.display = 'none';
     document.getElementById('sm2-ctx').textContent = '';
     document.getElementById('sm2-progress').textContent = '';
+    document.getElementById('sm2-prog-fill').style.width = '100%';
     document.getElementById('sm2-done-msg').style.display = 'block';
-    document.getElementById('sm2-done-sub').textContent = `${_sm2Done} card(s) revisado(s) nesta sessão.`;
-    loadFCStats(); // refresh counters
+    const total = _sm2Done;
+    const correct = _sm2Correct || 0;
+    const pct = total ? Math.round((correct / total) * 100) : 0;
+    document.getElementById('sm2-done-sub').textContent = `${total} card(s) revisado(s) nesta sessão`;
+    document.getElementById('sm2-done-stats').innerHTML = `
+      <div style="background:var(--bg);border-radius:12px;padding:12px 20px;min-width:80px">
+        <div style="font-size:22px;font-weight:900;color:var(--red)">${total}</div>
+        <div style="font-size:11px;color:var(--sub)">Revisados</div>
+      </div>
+      <div style="background:var(--bg);border-radius:12px;padding:12px 20px;min-width:80px">
+        <div style="font-size:22px;font-weight:900;color:#22C55E">${pct}%</div>
+        <div style="font-size:11px;color:var(--sub)">Acertos</div>
+      </div>
+      <div style="background:var(--bg);border-radius:12px;padding:12px 20px;min-width:80px">
+        <div style="font-size:22px;font-weight:900;color:#F59E0B">${_sm2Requeued || 0}</div>
+        <div style="font-size:11px;color:var(--sub)">Repetir</div>
+      </div>`;
+    loadFCStats();
   }
 
   function closeSM2() {
     document.getElementById('sm2-overlay').style.display = 'none';
     document.getElementById('sm2-card-wrap').style.display = 'block';
+    document.getElementById('sm2-done-msg').style.display = 'none';
     loadFCStats();
   }
+
+  // ── SM-2 keyboard & touch support ───────────────────────────────────────────
+  (function _sm2Interactions() {
+    document.addEventListener('keydown', e => {
+      const overlay = document.getElementById('sm2-overlay');
+      if (!overlay || overlay.style.display === 'none') return;
+      if (document.getElementById('sm2-done-msg')?.style.display !== 'none') {
+        if (e.key === 'Escape') closeSM2();
+        return;
+      }
+      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flipSM2Card(); return; }
+      if (e.key === 'Escape') { closeSM2(); return; }
+      if (_sm2Flipped) {
+        if (e.key === '1') rateSM2(0);
+        else if (e.key === '2') rateSM2(2);
+        else if (e.key === '3') rateSM2(3);
+        else if (e.key === '4') rateSM2(5);
+      }
+    });
+    // Touch swipe: left = failed (0), right = easy (5), up = flip
+    let _tx = 0, _ty = 0;
+    document.addEventListener('touchstart', e => {
+      const overlay = document.getElementById('sm2-overlay');
+      if (!overlay || overlay.style.display === 'none') return;
+      _tx = e.touches[0].clientX; _ty = e.touches[0].clientY;
+    }, { passive: true });
+    document.addEventListener('touchend', e => {
+      const overlay = document.getElementById('sm2-overlay');
+      if (!overlay || overlay.style.display === 'none') return;
+      if (document.getElementById('sm2-done-msg')?.style.display !== 'none') return;
+      const dx = e.changedTouches[0].clientX - _tx;
+      const dy = e.changedTouches[0].clientY - _ty;
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+        if (!_sm2Flipped) { flipSM2Card(); return; }
+        if (dx < 0) rateSM2(0);   // swipe left = failed
+        else rateSM2(5);           // swipe right = easy
+      } else if (dy < -40 && !_sm2Flipped) {
+        flipSM2Card();             // swipe up = flip
+      }
+    }, { passive: true });
+  })();
 
   // ── Donut Chart — Questões por Matéria ──────────────────────────────────────
   let _donutChart = null;
@@ -12696,33 +12768,60 @@ ${list.innerHTML}
 
 <!-- ── SM-2 Flash Card Review Modal ─────────────────────────────────────── -->
 <div class="fc-overlay" id="sm2-overlay" style="display:none" onclick="if(event.target===this)closeSM2()">
-  <div class="fc-modal" style="width:min(560px,96vw);padding:28px 28px 22px;position:relative">
-    <button onclick="closeSM2()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub)">✕</button>
-    <div style="font-size:13px;font-weight:800;color:var(--sub);letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">🧠 Revisão SM-2</div>
-    <div style="font-size:11px;color:var(--sub);margin-bottom:14px" id="sm2-progress">Carregando...</div>
-    <!-- subject + topic context -->
-    <div style="font-size:11px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px" id="sm2-ctx"></div>
-    <!-- flip card -->
-    <div class="fc-card-wrap" id="sm2-card-wrap" onclick="flipSM2Card()" style="height:180px">
-      <div class="fc-card-inner" id="sm2-card-inner">
-        <div class="fc-face fc-front" id="sm2-front"></div>
-        <div class="fc-face fc-back"  id="sm2-back"></div>
+  <div class="sm2-modal">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div>
+        <div style="font-size:12px;font-weight:800;color:var(--sub);letter-spacing:.6px;text-transform:uppercase">🧠 Revisão SM-2</div>
+        <div style="font-size:11px;font-weight:700;color:var(--red);letter-spacing:.3px;margin-top:2px" id="sm2-ctx"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:12px;color:var(--sub);font-weight:600" id="sm2-progress"></span>
+        <button onclick="closeSM2()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub);line-height:1">✕</button>
       </div>
     </div>
-    <div style="font-size:12px;color:var(--sub);text-align:center;margin:-8px 0 14px">Clique no card para ver a resposta</div>
-    <!-- rating buttons — shown after flip -->
-    <div id="sm2-rating-row" style="display:none;gap:8px;justify-content:center;margin-bottom:4px;flex-wrap:wrap">
-      <button onclick="rateSM2(0)" style="padding:9px 16px;border-radius:10px;border:none;background:#991B1B;color:#fff;cursor:pointer;font-size:12px;font-weight:700">⬛ Não lembrei</button>
-      <button onclick="rateSM2(2)" style="padding:9px 16px;border-radius:10px;border:none;background:#E8362A;color:#fff;cursor:pointer;font-size:12px;font-weight:700">😓 Difícil</button>
-      <button onclick="rateSM2(3)" style="padding:9px 16px;border-radius:10px;border:none;background:#F59E0B;color:#fff;cursor:pointer;font-size:12px;font-weight:700">🤔 Ok</button>
-      <button onclick="rateSM2(5)" style="padding:9px 16px;border-radius:10px;border:none;background:#22C55E;color:#fff;cursor:pointer;font-size:12px;font-weight:700">😊 Fácil</button>
+    <!-- Progress bar -->
+    <div class="sm2-prog-bar"><div class="sm2-prog-fill" id="sm2-prog-fill" style="width:0%"></div></div>
+
+    <!-- Card area -->
+    <div id="sm2-card-wrap">
+      <div class="fc-card-wrap" onclick="flipSM2Card()" id="sm2-card-flip-wrap">
+        <div class="fc-card-inner" id="sm2-card-inner">
+          <div class="fc-face fc-front" id="sm2-front"></div>
+          <div class="fc-face fc-back"  id="sm2-back"></div>
+        </div>
+      </div>
+      <div id="sm2-flip-hint" style="font-size:12px;color:var(--sub);text-align:center;margin-top:-6px;margin-bottom:14px">
+        Clique no card ou pressione <kbd style="background:var(--border);border-radius:4px;padding:1px 6px;font-size:11px">Espaço</kbd> para virar
+      </div>
+      <!-- Rating buttons -->
+      <div id="sm2-rating-row" style="display:none;gap:8px;justify-content:center;margin-bottom:6px;flex-wrap:wrap">
+        <button class="sm2-rate-btn" onclick="rateSM2(0)" style="background:#7F1D1D;color:#fff">
+          ⬛ Não lembrei<span class="sm2-key-badge">1</span>
+        </button>
+        <button class="sm2-rate-btn" onclick="rateSM2(2)" style="background:#E8362A;color:#fff">
+          😓 Difícil<span class="sm2-key-badge">2</span>
+        </button>
+        <button class="sm2-rate-btn" onclick="rateSM2(3)" style="background:#F59E0B;color:#fff">
+          🤔 Ok<span class="sm2-key-badge">3</span>
+        </button>
+        <button class="sm2-rate-btn" onclick="rateSM2(5)" style="background:#22C55E;color:#fff">
+          😊 Fácil<span class="sm2-key-badge">4</span>
+        </button>
+      </div>
+      <div id="sm2-interval-hint" style="text-align:center;font-size:12px;color:var(--sub);min-height:18px;margin-bottom:4px;font-weight:600"></div>
     </div>
-    <div id="sm2-interval-hint" style="text-align:center;font-size:11px;color:var(--sub);min-height:16px;margin-bottom:6px"></div>
-    <div id="sm2-done-msg" style="display:none;text-align:center;padding:24px 0">
-      <div style="font-size:32px;margin-bottom:8px">🎉</div>
-      <div style="font-size:16px;font-weight:800">Sessão concluída!</div>
-      <div style="font-size:13px;color:var(--sub);margin-top:4px" id="sm2-done-sub"></div>
-      <button onclick="closeSM2()" style="margin-top:16px;padding:10px 28px;border-radius:10px;border:none;background:var(--red);color:#fff;cursor:pointer;font-weight:700">Fechar</button>
+
+    <!-- Done screen -->
+    <div id="sm2-done-msg" style="display:none;text-align:center;padding:32px 0 16px">
+      <div style="font-size:48px;margin-bottom:12px">🎉</div>
+      <div style="font-size:20px;font-weight:900;margin-bottom:6px">Sessão concluída!</div>
+      <div style="font-size:13px;color:var(--sub);margin-bottom:20px" id="sm2-done-sub"></div>
+      <div id="sm2-done-stats" style="display:flex;gap:16px;justify-content:center;margin-bottom:24px;flex-wrap:wrap"></div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button onclick="openSM2Review()" style="padding:11px 24px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-weight:700;font-size:13px">🔄 Mais cards</button>
+        <button onclick="closeSM2()" style="padding:11px 28px;border-radius:12px;border:none;background:var(--red);color:#fff;cursor:pointer;font-weight:700;font-size:13px">Fechar</button>
+      </div>
     </div>
   </div>
 </div>

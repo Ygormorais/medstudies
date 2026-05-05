@@ -4,7 +4,7 @@ SQLAlchemy ORM models. Topic is the central entity — everything links to it.
 from __future__ import annotations
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, ForeignKey,
+    Column, Index, Integer, String, Float, DateTime, ForeignKey,
     Boolean, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -61,6 +61,9 @@ class Topic(Base):
 
     __table_args__ = (
         UniqueConstraint("name", "subject_id", name="uq_topic_name_subject"),
+        Index("ix_topics_subject_id", "subject_id"),
+        Index("ix_topics_parent_id", "parent_id"),
+        Index("ix_topics_is_favorite", "is_favorite"),
     )
 
 
@@ -79,6 +82,13 @@ class Question(Base):
 
     topic = relationship("Topic", back_populates="questions")
 
+    __table_args__ = (
+        Index("ix_questions_topic_id", "topic_id"),
+        Index("ix_questions_answered_at", "answered_at"),
+        Index("ix_questions_correct", "correct"),
+        Index("ix_questions_topic_correct", "topic_id", "correct"),
+    )
+
 
 class StudySession(Base):
     """Records a manual or detected study session."""
@@ -92,6 +102,11 @@ class StudySession(Base):
     notes = Column(Text, nullable=True)
 
     topic = relationship("Topic", back_populates="sessions")
+
+    __table_args__ = (
+        Index("ix_study_sessions_topic_id", "topic_id"),
+        Index("ix_study_sessions_started_at", "started_at"),
+    )
 
 
 class AnkiSnapshot(Base):
@@ -132,6 +147,11 @@ class TopicReview(Base):
 
     topic = relationship("Topic")
 
+    __table_args__ = (
+        Index("ix_topic_reviews_next_review", "next_review"),
+        Index("ix_topic_reviews_topic_id", "topic_id"),
+    )
+
 
 class FlashCard(Base):
     """A Q&A flashcard linked to a topic, with SM-2 state."""
@@ -152,6 +172,11 @@ class FlashCard(Base):
     next_review = Column(DateTime, nullable=True)
 
     topic = relationship("Topic", back_populates="flashcards")
+
+    __table_args__ = (
+        Index("ix_flashcards_topic_id", "topic_id"),
+        Index("ix_flashcards_next_review", "next_review"),
+    )
 
 
 # ── Tags ──────────────────────────────────────────────────────────────────────
@@ -183,3 +208,7 @@ class DailyPlan(Base):
     generated_at = Column(DateTime, default=datetime.utcnow)
     plan_date = Column(String(10), nullable=False)  # YYYY-MM-DD
     plan_json = Column(Text, nullable=False)         # serialized plan items
+
+    __table_args__ = (
+        Index("ix_daily_plans_plan_date", "plan_date"),
+    )

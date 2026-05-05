@@ -2699,6 +2699,12 @@
       <button class="config-save-btn" onclick="saveConfig()">Salvar Configurações</button>
 
       <div class="config-section" style="margin-top:18px">
+        <div class="config-section-title">🔔 Notificações</div>
+        <div style="font-size:12px;color:var(--sub);margin-bottom:12px">Receba um lembrete diário quando tiver cards ou tópicos SM-2 para revisar (entre 7h e 22h, uma vez por dia).</div>
+        <button id="notif-toggle-btn" onclick="requestNotifPermission()" style="padding:10px 20px;border-radius:10px;border:none;color:#fff;font-weight:700;font-size:13px;cursor:pointer;background:var(--red)">🔕 Ativar notificações</button>
+      </div>
+
+      <div class="config-section" style="margin-top:18px">
         <div class="config-section-title">📚 Gerenciar Assuntos</div>
         <div style="font-size:12px;color:var(--sub);margin-bottom:8px">Edite os pesos do edital ou exclua assuntos sem tópicos.</div>
         <div id="subj-mgr-wrap">
@@ -5087,6 +5093,7 @@
     document.getElementById('cfg-exam-name').value  = cfg.examName || '';
     const isDark = document.documentElement.classList.contains('dark');
     document.getElementById('cfg-theme-label').textContent = isDark ? 'Dark' : 'Light';
+    updateNotifToggleUI();
   }
 
   function saveConfig() {
@@ -8496,22 +8503,77 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
   async function checkSM2Due() {
     if (!('Notification' in window)) return;
     try {
-      const data = await fetchJSON('/api/flashcards/sm2?limit=1');
-      const dueCount = data.total_due ?? (data.cards ? data.cards.length : 0);
-      if (!dueCount) return;
+      // get due count from reviews endpoint (more reliable than sm2 array)
+      const [cardData, reviewData] = await Promise.all([
+        fetchJSON('/api/flashcards/stats').catch(() => ({})),
+        fetchJSON('/api/reviews/count').catch(() => ({ due: 0 })),
+      ]);
+      const dueCards = cardData.due ?? 0;
+      const dueTopics = reviewData.due ?? 0;
+      const totalDue = dueCards + dueTopics;
+
+      // update badge
       const badge = document.getElementById('rv-due-badge');
-      if (badge) { badge.style.display = ''; badge.textContent = dueCount > 99 ? '99+' : dueCount; }
+      if (badge && totalDue > 0) { badge.style.display = ''; badge.textContent = totalDue > 99 ? '99+' : totalDue; }
+
+      if (!totalDue) return;
+
+      // anti-spam: only notify once per day, and only between 7h-22h
+      const hour = new Date().getHours();
+      if (hour < 7 || hour > 22) return;
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const lastKey = localStorage.getItem('_sm2_notif_date');
+      if (lastKey === todayKey) return;
+
+      const body = [
+        dueCards  > 0 ? `${dueCards} flash card${dueCards  > 1 ? 's' : ''}` : null,
+        dueTopics > 0 ? `${dueTopics} tópico${dueTopics > 1 ? 's' : ''} SM-2` : null,
+      ].filter(Boolean).join(' + ') + ' para revisar hoje!';
+
+      const sendNotif = () => {
+        const reg = navigator.serviceWorker?.controller;
+        if (reg && 'showNotification' in ServiceWorkerRegistration.prototype) {
+          navigator.serviceWorker.ready.then(r => r.showNotification('🧠 MedStudies', {
+            body,
+            icon: '/static/icon-192.png',
+            badge: '/static/icon-192.png',
+            tag: 'sm2-due',
+            renotify: false,
+          }));
+        } else {
+          new Notification('🧠 MedStudies', { body, icon: '/static/icon-192.png' });
+        }
+        localStorage.setItem('_sm2_notif_date', todayKey);
+      };
+
       if (Notification.permission === 'granted') {
-        new Notification('MedStudies — Revisão SM-2', {
-          body: `Você tem ${dueCount} flash card${dueCount > 1 ? 's' : ''} para revisar hoje!`,
-          icon: '/favicon.ico',
-        });
+        sendNotif();
       } else if (Notification.permission === 'default') {
-        Notification.requestPermission().then(p => {
-          if (p === 'granted') checkSM2Due();
-        });
+        // don't auto-prompt — let user enable via config
       }
     } catch(e) {}
+  }
+
+  // Request notification permission (called from config page toggle)
+  async function requestNotifPermission() {
+    if (!('Notification' in window)) { toast('Notificações não suportadas neste browser', 'error'); return; }
+    const p = await Notification.requestPermission();
+    if (p === 'granted') {
+      toast('✅ Notificações ativadas!');
+      localStorage.removeItem('_sm2_notif_date'); // allow immediate notification
+      checkSM2Due();
+    } else {
+      toast('Notificações bloqueadas — ative manualmente nas configurações do browser', 'error');
+    }
+    updateNotifToggleUI();
+  }
+
+  function updateNotifToggleUI() {
+    const btn = document.getElementById('notif-toggle-btn');
+    if (!btn) return;
+    const granted = 'Notification' in window && Notification.permission === 'granted';
+    btn.textContent = granted ? '🔔 Notificações ativas' : '🔕 Ativar notificações';
+    btn.style.background = granted ? '#22C55E' : 'var(--red)';
   }
 
   // ── Módulo Simulado ────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@ from collections import defaultdict
 
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -25,6 +25,11 @@ from medstudies.engine.weekly_planner import WeeklyPlanBuilder
 from medstudies.ingestion.mock_exam_adapter import MockExamAdapter
 from medstudies.ingestion.csv_adapter import CSVAdapter
 from medstudies.auth.middleware import JWTAuthMiddleware
+from medstudies.auth.supabase_client import logout_server_side, send_magic_link, verify_otp
+from medstudies.auth.config import (
+    ACCESS_MAX_AGE, COOKIE_ACCESS, COOKIE_HTTPONLY,
+    COOKIE_REFRESH, COOKIE_SAMESITE, COOKIE_SECURE, REFRESH_MAX_AGE,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -40,6 +45,57 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.add_middleware(JWTAuthMiddleware)
+
+
+def _set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
+    response.set_cookie(COOKIE_ACCESS, access_token, max_age=ACCESS_MAX_AGE,
+                        httponly=COOKIE_HTTPONLY, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE)
+    response.set_cookie(COOKIE_REFRESH, refresh_token, max_age=REFRESH_MAX_AGE,
+                        httponly=COOKIE_HTTPONLY, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE)
+
+
+class _LoginBody(BaseModel):
+    email: str
+
+
+@app.post("/auth/login")
+def auth_login(body: _LoginBody):
+    """Envia magic link para o e-mail informado."""
+    send_magic_link(body.email)
+    return {"detail": "Magic link enviado"}
+
+
+@app.get("/auth/callback")
+def auth_callback(token_hash: str, type: str = "magiclink"):
+    """Troca o token_hash pelo par de tokens de sessão e seta cookies."""
+    from fastapi.responses import RedirectResponse
+    try:
+        session = verify_otp(token_hash, type)
+    except ValueError as exc:
+        if "link_expired" in str(exc):
+            raise HTTPException(status_code=400, detail="Link expirado ou já utilizado.")
+        raise HTTPException(status_code=400, detail=str(exc))
+    response = RedirectResponse(url="/", status_code=303)
+    _set_auth_cookies(response, session["access_token"], session["refresh_token"])
+    return response
+
+
+@app.post("/auth/logout")
+def auth_logout(request: Request):
+    """Revoga a sessão e limpa os cookies."""
+    from fastapi.responses import JSONResponse as _JSONResponse
+    token = request.cookies.get(COOKIE_ACCESS)
+    if token:
+        try:
+            logout_server_side(token)
+        except Exception:
+            pass  # best-effort server-side revocation
+    resp = _JSONResponse({"detail": "Logout realizado"})
+    resp.delete_cookie(COOKIE_ACCESS)
+    resp.delete_cookie(COOKIE_REFRESH)
+    return resp
+
+
 DASHBOARD_HTML = Path(__file__).parent / "dashboard.html"
 INTERFACE_DIR   = Path(__file__).parent
 

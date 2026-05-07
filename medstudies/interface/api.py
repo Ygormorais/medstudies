@@ -114,7 +114,7 @@ def today_summary():
     """
     from datetime import date as _date
     db = get_session()
-    today = datetime.now(timezone.utc)
+    today = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # SM-2 flashcards due
     fc_due = db.query(func.count(FlashCard.id)).filter(
@@ -371,7 +371,7 @@ async def upload_mock(
         reader = csv_module.DictReader(io.StringIO(text))
         questions = list(reader)
 
-    answered_at = datetime.fromisoformat(exam_date) if exam_date else None
+    answered_at = datetime.fromisoformat(exam_date).replace(tzinfo=None) if exam_date else None
     db = get_session()
     adapter = MockExamAdapter(db)
     result = adapter.ingest(questions=questions, source=source, answered_at=answered_at)
@@ -391,7 +391,7 @@ async def upload_mock(
 @app.post("/api/mock")
 def import_mock(payload: dict):
     db = get_session()
-    answered_at = datetime.fromisoformat(payload["date"]) if payload.get("date") else None
+    answered_at = datetime.fromisoformat(payload["date"]).replace(tzinfo=None) if payload.get("date") else None
     adapter = MockExamAdapter(db)
     result = adapter.ingest(questions=payload.get("questions", []),
                              source=payload.get("source", "Simulado"),
@@ -1142,7 +1142,7 @@ async def import_questions_csv(file: UploadFile):
         answered_at = None
         date_raw = row.get("date") or row.get("data") or ""
         if date_raw:
-            try: answered_at = datetime.fromisoformat(date_raw)
+            try: answered_at = datetime.fromisoformat(date_raw).replace(tzinfo=None)
             except Exception: pass
 
         q = Question(
@@ -1315,7 +1315,7 @@ def add_question_and_update_sm2(body: QuestionIn):
     topic = db.get(Topic, body.topic_id)
     if not topic:
         raise HTTPException(status_code=404, detail="Tópico não encontrado.")
-    answered_at = datetime.fromisoformat(body.answered_at) if body.answered_at else datetime.now(timezone.utc)
+    answered_at = datetime.fromisoformat(body.answered_at).replace(tzinfo=None) if body.answered_at else datetime.now(timezone.utc).replace(tzinfo=None)
     q = Question(topic_id=body.topic_id, correct=body.correct,
                  source=body.source, notes=body.notes, answered_at=answered_at,
                  difficulty=body.difficulty, statement=body.statement or None)
@@ -2040,7 +2040,7 @@ def history_by_difficulty():
 def stats_heatmap(days: int = 365):
     from datetime import timedelta
     db = get_session()
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
     questions = db.query(Question).filter(Question.answered_at >= since).all()
     counts: dict[str, int] = defaultdict(int)
     for q in questions:
@@ -2554,7 +2554,7 @@ def stats_period(days: int = 30):
     """Key stats filtered to last N days (0 = all time)."""
     from datetime import timedelta
     db = get_session()
-    since = datetime.now(timezone.utc) - timedelta(days=days) if days > 0 else datetime(2000, 1, 1)
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days) if days > 0 else datetime(2000, 1, 1)
 
     rows = (db.query(Question, Subject)
               .join(Topic, Question.topic_id == Topic.id)
@@ -3163,7 +3163,7 @@ def get_xp_history(days: int = 30):
     """Return daily XP earned for the last N days (cumulative line chart)."""
     from datetime import timedelta
     db = get_session()
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
     # Daily XP from questions
     day_xp: dict[str, int] = defaultdict(int)

@@ -1208,11 +1208,12 @@ def _sm2_apply_to_review(review: TopicReview, quality: int) -> TopicReview:
     ef = ef + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
     ef = max(1.3, ef)
 
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     review.ease_factor = round(ef, 4)
     review.interval_days = interval
     review.repetitions = reps
-    review.last_reviewed = datetime.now(timezone.utc)
-    review.next_review = datetime.now(timezone.utc) + timedelta(days=interval)
+    review.last_reviewed = now
+    review.next_review = now + timedelta(days=interval)
     return review
 
 
@@ -1857,7 +1858,7 @@ def _sm2_update(ef: float, interval: float, reps: int, quality: int):
         reps += 1
         ef = ef + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)
         ef = max(1.3, ef)
-    next_rev = datetime.now(timezone.utc) + timedelta(days=max(1, interval))
+    next_rev = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=max(1, interval))
     return round(ef, 4), interval, reps, next_rev
 
 
@@ -1872,7 +1873,7 @@ def mark_flashcard_reviewed(card_id: int, body: SM2RatingIn = None):
         c.ease_factor or 2.5, c.interval_days or 1.0, c.repetitions or 0, quality
     )
     c.times_reviewed = (c.times_reviewed or 0) + 1
-    c.last_reviewed  = datetime.now(timezone.utc)
+    c.last_reviewed  = datetime.now(timezone.utc).replace(tzinfo=None)
     c.ease_factor    = ef
     c.interval_days  = interval
     c.repetitions    = reps

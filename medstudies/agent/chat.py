@@ -24,7 +24,7 @@ from medstudies.engine.scorer import TopicScorer
 from medstudies.engine.sm2 import SM2Engine
 from medstudies.persistence.models import DailyPlan, Question, Subject, Topic
 
-MODEL = os.getenv("MEDSTUDIES_CHAT_MODEL", "claude-haiku-4-5")
+MODEL = os.getenv("MEDSTUDIES_CHAT_MODEL", "claude-haiku-4-5-20251001")
 
 SYSTEM_PROMPT = """You are MedBot, an intelligent study assistant integrated with MedStudies — a personal medical residency exam preparation system.
 

@@ -287,3 +287,15 @@ class LibraryItem(Base):
         Index("ix_library_item_type",  "item_type"),
         Index("ix_library_created_at", "created_at"),
     )
+
+
+class User(Base):
+    """Mirror of the Supabase auth user. id = Supabase user UUID."""
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True)         # Supabase user UUID
+    email = Column(String(320), unique=True, nullable=False)
+    plan_tier = Column(String(20), default="free", nullable=False)  # free | premium
+    display_name = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    last_login_at = Column(DateTime, nullable=True)

@@ -22,11 +22,16 @@ class Subject(Base):
     __tablename__ = "subjects"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String(120), unique=True, nullable=False)
+    name = Column(String(120), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     exam_weight = Column(Float, default=1.0)  # relative importance in target exam
     created_at = Column(DateTime, default=_utcnow)
 
     topics = relationship("Topic", back_populates="subject", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("name", "user_id", name="uq_subject_name_user"),
+    )
 
 
 class Topic(Base):
@@ -40,6 +45,7 @@ class Topic(Base):
     name = Column(String(200), nullable=False)
     subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=False)
     parent_id = Column(Integer, ForeignKey("topics.id"), nullable=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     is_favorite = Column(Boolean, default=False)             # starred for special attention
 
@@ -63,7 +69,7 @@ class Topic(Base):
     tags = relationship("Tag", secondary="topic_tags", back_populates="topics")
 
     __table_args__ = (
-        UniqueConstraint("name", "subject_id", name="uq_topic_name_subject"),
+        UniqueConstraint("name", "subject_id", "user_id", name="uq_topic_name_subject_user"),
         Index("ix_topics_subject_id", "subject_id"),
         Index("ix_topics_parent_id", "parent_id"),
         Index("ix_topics_is_favorite", "is_favorite"),
@@ -76,6 +82,7 @@ class Question(Base):
 
     id = Column(Integer, primary_key=True)
     topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     source = Column(String(100), nullable=True)   # e.g. "Medcof 2024 Mock #3"
     answered_at = Column(DateTime, default=_utcnow)
     correct = Column(Boolean, nullable=False)
@@ -95,6 +102,7 @@ class Question(Base):
         Index("ix_questions_answered_at", "answered_at"),
         Index("ix_questions_correct", "correct"),
         Index("ix_questions_topic_correct", "topic_id", "correct"),
+        Index("ix_questions_user_id_answered_at", "user_id", "answered_at"),
     )
 
 
@@ -104,6 +112,7 @@ class StudySession(Base):
 
     id = Column(Integer, primary_key=True)
     topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     session_type = Column(String(50), default="review")  # review | practice | lecture
     started_at = Column(DateTime, default=_utcnow)
     duration_minutes = Column(Integer, nullable=True)
@@ -126,6 +135,7 @@ class AnkiSnapshot(Base):
 
     id = Column(Integer, primary_key=True)
     topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     synced_at = Column(DateTime, default=_utcnow)
 
     deck_name = Column(String(200), nullable=False)
@@ -146,7 +156,8 @@ class TopicReview(Base):
     __tablename__ = "topic_reviews"
 
     id = Column(Integer, primary_key=True)
-    topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False, unique=True)
+    topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     ease_factor = Column(Float, default=2.5)       # EF starts at 2.5
     interval_days = Column(Float, default=1.0)     # next interval in days
     repetitions = Column(Integer, default=0)       # consecutive correct reviews
@@ -156,6 +167,7 @@ class TopicReview(Base):
     topic = relationship("Topic")
 
     __table_args__ = (
+        UniqueConstraint("topic_id", "user_id", name="uq_topic_review_topic_user"),
         Index("ix_topic_reviews_next_review", "next_review"),
         Index("ix_topic_reviews_topic_id", "topic_id"),
     )
@@ -167,6 +179,7 @@ class FlashCard(Base):
 
     id = Column(Integer, primary_key=True)
     topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
     hint = Column(Text, nullable=True)
@@ -201,11 +214,16 @@ class Tag(Base):
     """User-defined label that can be applied to multiple topics."""
     __tablename__ = "tags"
 
-    id    = Column(Integer, primary_key=True)
-    name  = Column(String(80), unique=True, nullable=False)
-    color = Column(String(7), default="#2979E0")  # hex colour for the chip
+    id      = Column(Integer, primary_key=True)
+    name    = Column(String(80), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    color   = Column(String(7), default="#2979E0")  # hex colour for the chip
 
     topics = relationship("Topic", secondary=topic_tags, back_populates="tags")
+
+    __table_args__ = (
+        UniqueConstraint("name", "user_id", name="uq_tag_name_user"),
+    )
 
 
 class DailyPlan(Base):
@@ -216,6 +234,7 @@ class DailyPlan(Base):
     generated_at = Column(DateTime, default=_utcnow)
     plan_date = Column(String(10), nullable=False)  # YYYY-MM-DD
     plan_json = Column(Text, nullable=False)         # serialized plan items
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     __table_args__ = (
         Index("ix_daily_plans_plan_date", "plan_date"),
@@ -235,6 +254,7 @@ class EditorialTopic(Base):
     topic_name   = Column(String(200), nullable=False)
     weight_pct   = Column(Float, default=0.0)            # % importance in edital
     topic_id     = Column(Integer, ForeignKey("topics.id"), nullable=True)  # matched topic
+    user_id      = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at   = Column(DateTime, default=_utcnow)
 
     topic = relationship("Topic")
@@ -271,6 +291,7 @@ class LibraryItem(Base):
     # optional taxonomy
     subject_id  = Column(Integer, ForeignKey("subjects.id"), nullable=True)
     topic_id    = Column(Integer, ForeignKey("topics.id"),   nullable=True)
+    user_id     = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     tags        = Column(String(500), nullable=True)   # comma-separated free tags
 
     # metadata

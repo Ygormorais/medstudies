@@ -1187,17 +1187,13 @@ def export_scores():
 
 # ── SM-2 Spaced Repetition ────────────────────────────────────────────────────
 
-def _sm2_update(review: TopicReview, quality: int) -> TopicReview:
-    """
-    Apply SM-2 algorithm.
-    quality: 0-5  (0-2 = failed, 3 = hard, 4 = good, 5 = easy)
-    """
-    from math import ceil
+def _sm2_apply_to_review(review: TopicReview, quality: int) -> TopicReview:
+    """Apply SM-2 algorithm to a TopicReview ORM object, mutating it in place."""
+    from datetime import timedelta
     ef = review.ease_factor or 2.5
     reps = review.repetitions or 0
 
     if quality < 3:
-        # Failed — reset
         reps = 0
         interval = 1.0
     else:
@@ -1209,7 +1205,6 @@ def _sm2_update(review: TopicReview, quality: int) -> TopicReview:
             interval = round((review.interval_days or 1.0) * ef, 1)
         reps += 1
 
-    # Update EF
     ef = ef + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
     ef = max(1.3, ef)
 
@@ -1217,8 +1212,6 @@ def _sm2_update(review: TopicReview, quality: int) -> TopicReview:
     review.interval_days = interval
     review.repetitions = reps
     review.last_reviewed = datetime.now(timezone.utc)
-
-    from datetime import timedelta
     review.next_review = datetime.now(timezone.utc) + timedelta(days=interval)
     return review
 
@@ -1303,7 +1296,7 @@ def update_review(topic_id: int, payload: dict):
     quality = int(payload.get("quality", 3))
     quality = max(0, min(5, quality))
     rv = _get_or_create_review(db, topic_id)
-    rv = _sm2_update(rv, quality)
+    rv = _sm2_apply_to_review(rv, quality)
     db.commit()
     return {
         "topic_id": topic_id,
@@ -1328,7 +1321,7 @@ def add_question_and_update_sm2(body: QuestionIn):
     db.add(q)
     # Auto-update SM-2: correct=quality 4, wrong=quality 1
     rv = _get_or_create_review(db, body.topic_id)
-    _sm2_update(rv, quality=4 if body.correct else 1)
+    _sm2_apply_to_review(rv, quality=4 if body.correct else 1)
     db.commit()
     return {"id": q.id, "topic_name": topic.name, "correct": body.correct,
             "next_review": rv.next_review.isoformat() if rv.next_review else None}

@@ -1152,7 +1152,7 @@ async def import_questions_csv(file: UploadFile):
             notes=row.get("notes") or row.get("observacao") or row.get("observação") or None,
             difficulty=row.get("difficulty") or row.get("dificuldade") or "medio",
             statement=row.get("statement") or row.get("enunciado") or None,
-            answered_at=answered_at or datetime.now(timezone.utc),
+            answered_at=answered_at or datetime.now(timezone.utc).replace(tzinfo=None),
         )
         db.add(q)
         imported += 1
@@ -1230,7 +1230,7 @@ def reviews_due(limit: int = 20):
     """Return topics due for spaced-repetition review today (including never-reviewed)."""
     from sqlalchemy import or_
     db = get_session()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # LEFT JOIN: topics that have a review record due today OR no record at all
     rows = (
@@ -1267,7 +1267,7 @@ def reviews_due(limit: int = 20):
 def reviews_count():
     """Number of topics due for review right now."""
     db = get_session()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     count = (
         db.query(TopicReview)
         .filter((TopicReview.next_review <= now) | (TopicReview.next_review == None))
@@ -1576,7 +1576,7 @@ def weekly_report():
     weak = [s for s in scores if s.total_questions >= 3 and s.error_rate > 0.4][:5]
 
     # SM2 due
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     sm2_due = db.query(TopicReview).filter(
         (TopicReview.next_review <= now) | (TopicReview.next_review == None)
     ).count()
@@ -2053,7 +2053,7 @@ def stats_heatmap(days: int = 365):
 @app.get("/api/flashcards/stats")
 def flashcard_stats():
     db = get_session()
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.now(timezone.utc).replace(tzinfo=None).replace(hour=0, minute=0, second=0, microsecond=0)
     total = db.query(FlashCard).count()
     reviewed_today = db.query(FlashCard).filter(FlashCard.last_reviewed >= today_start).count()
     # streak: consecutive days with at least one review
@@ -2085,7 +2085,7 @@ def flashcard_sm2_queue(limit: int = 20):
     """Due cards first (next_review <= now), then new cards, ordered by SM-2 schedule."""
     from sqlalchemy import asc, nulls_first, or_
     db = get_session()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     cards = (db.query(FlashCard, Topic, Subject)
                .join(Topic, FlashCard.topic_id == Topic.id)
                .join(Subject, Topic.subject_id == Subject.id)
@@ -2798,7 +2798,7 @@ def agenda_sm2(days: int = 14):
     """Cards and topics due for SM-2 review in the next N days, grouped by date."""
     from datetime import timedelta
     db = get_session()
-    now  = datetime.now(timezone.utc)
+    now  = datetime.now(timezone.utc).replace(tzinfo=None)
     end  = now + timedelta(days=days)
 
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -3058,7 +3058,7 @@ def topic_detail(topic_id: int):
     correct_qs = db.query(Question).filter(Question.topic_id == topic_id, Question.correct == True).count()
 
     cards = db.query(FlashCard).filter(FlashCard.topic_id == topic_id).all()
-    due_cards = sum(1 for c in cards if c.next_review is None or c.next_review <= datetime.now(timezone.utc))
+    due_cards = sum(1 for c in cards if c.next_review is None or c.next_review <= datetime.now(timezone.utc).replace(tzinfo=None))
 
     sessions = (db.query(StudySession).filter(StudySession.topic_id == topic_id)
                   .order_by(StudySession.started_at.desc()).limit(5).all())
@@ -3738,7 +3738,7 @@ def question_answer(question_id: int, body: dict):
             raise HTTPException(404)
         q.chosen_alt = chosen
         q.correct = (chosen == (q.correct_alt or "").upper())
-        q.answered_at = datetime.now(timezone.utc)
+        q.answered_at = datetime.now(timezone.utc).replace(tzinfo=None)
         if body.get("notes"):
             q.notes = body["notes"]
         db.commit()

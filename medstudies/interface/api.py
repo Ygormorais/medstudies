@@ -2358,7 +2358,7 @@ class BulkQuestionsIn(BaseModel):
 def bulk_questions(body: BulkQuestionsIn):
     db = get_session()
     created = skipped = errors = 0
-    for row in body.rows:
+    for idx, row in enumerate(body.rows):
         try:
             subject = db.query(Subject).filter(Subject.name.ilike(row.subject_name.strip())).first()
             if not subject:
@@ -2378,7 +2378,7 @@ def bulk_questions(body: BulkQuestionsIn):
             db.add(q)
             created += 1
         except Exception as exc:
-            _log.warning("bulk_questions: row skipped — %s", exc)
+            _log.warning("bulk_questions: row %d skipped — %s", idx, exc)
             errors += 1
     db.commit()
     return {"created": created, "skipped": skipped, "errors": errors}

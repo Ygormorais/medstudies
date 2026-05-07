@@ -10917,11 +10917,12 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     if (!grid) return;
     grid.innerHTML = '<div class="empty"><span class="spinner"></span> Carregando...</div>';
     try {
-      const [items, stats, subjects] = await Promise.all([
+      const [libRes, stats, subjects] = await Promise.all([
         fetchJSON('/api/library'),
         fetchJSON('/api/library/stats').catch(() => ({})),
         fetchJSON('/api/subjects'),
       ]);
+      const items = libRes.items ?? libRes;
       _bibItems = items;
       renderBibGrid(items);
       renderBibStats(stats);

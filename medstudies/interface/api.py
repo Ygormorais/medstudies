@@ -3354,53 +3354,62 @@ def library_list(
     topic_id: int | None = None,
     favorite: bool | None = None,
     q: str | None = None,
+    skip: int = 0,
     limit: int = 200,
 ):
     with get_session() as db:
-        items = db.query(LibraryItem).order_by(LibraryItem.created_at.desc())
+        query = db.query(LibraryItem).order_by(LibraryItem.created_at.desc())
         if item_type:
-            items = items.filter(LibraryItem.item_type == item_type)
+            query = query.filter(LibraryItem.item_type == item_type)
         if subject_id:
-            items = items.filter(LibraryItem.subject_id == subject_id)
+            query = query.filter(LibraryItem.subject_id == subject_id)
         if topic_id:
-            items = items.filter(LibraryItem.topic_id == topic_id)
+            query = query.filter(LibraryItem.topic_id == topic_id)
         if favorite is True:
-            items = items.filter(LibraryItem.is_favorite == True)
-        items = items.limit(limit).all()
-
+            query = query.filter(LibraryItem.is_favorite == True)
         if q:
-            q_low = q.lower()
-            items = [i for i in items if q_low in (i.title or "").lower()
-                     or q_low in (i.description or "").lower()
-                     or q_low in (i.tags or "").lower()]
+            q_pat = f"%{q}%"
+            from sqlalchemy import or_
+            query = query.filter(
+                or_(
+                    LibraryItem.title.ilike(q_pat),
+                    LibraryItem.description.ilike(q_pat),
+                    LibraryItem.tags.ilike(q_pat),
+                )
+            )
+        total = query.count()
+        items = query.offset(skip).limit(limit).all()
 
-        def _subject_name(item):
-            if item.subject_id:
-                s = db.query(Subject).get(item.subject_id)
-                return s.name if s else None
-            return None
+        # prefetch subjects to avoid N+1
+        subject_ids = {i.subject_id for i in items if i.subject_id}
+        subjects = {s.id: s.name for s in db.query(Subject).filter(Subject.id.in_(subject_ids)).all()} if subject_ids else {}
 
-        return [
-            {
-                "id": i.id,
-                "title": i.title,
-                "item_type": i.item_type,
-                "description": i.description,
-                "url": i.url,
-                "content": i.content,
-                "file_path": i.file_path,
-                "file_size": i.file_size,
-                "subject_id": i.subject_id,
-                "subject_name": _subject_name(i),
-                "topic_id": i.topic_id,
-                "tags": i.tags,
-                "source": i.source,
-                "year": i.year,
-                "is_favorite": i.is_favorite,
-                "created_at": i.created_at.isoformat() if i.created_at else None,
-            }
-            for i in items
-        ]
+        return {
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "items": [
+                {
+                    "id": i.id,
+                    "title": i.title,
+                    "item_type": i.item_type,
+                    "description": i.description,
+                    "url": i.url,
+                    "content": i.content,
+                    "file_path": i.file_path,
+                    "file_size": i.file_size,
+                    "subject_id": i.subject_id,
+                    "subject_name": subjects.get(i.subject_id),
+                    "topic_id": i.topic_id,
+                    "tags": i.tags,
+                    "source": i.source,
+                    "year": i.year,
+                    "is_favorite": i.is_favorite,
+                    "created_at": i.created_at.isoformat() if i.created_at else None,
+                }
+                for i in items
+            ],
+        }
 
 
 @app.post("/api/library")

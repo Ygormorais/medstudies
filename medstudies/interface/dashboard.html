@@ -3048,6 +3048,9 @@
             <option value="link">🔗 Link</option>
             <option value="video">🎬 Vídeo</option>
             <option value="note">📝 Nota</option>
+            <option value="image">🖼️ Imagem</option>
+            <option value="audio">🎵 Áudio</option>
+            <option value="file">📁 Arquivo</option>
           </select>
           <select id="bib-subject-filter" onchange="filterBiblioteca()"
             style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
@@ -10946,7 +10949,7 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
       </div>`;
       return;
     }
-    const TYPE_ICON = { pdf:'📄', link:'🔗', video:'🎬', note:'📝' };
+    const TYPE_ICON = { pdf:'📄', link:'🔗', video:'🎬', note:'📝', image:'🖼️', audio:'🎵', file:'📁' };
     grid.innerHTML = items.map(item => {
       const icon = TYPE_ICON[item.item_type] || '📄';
       const badge = `<span class="bib-type-badge bib-badge-${item.item_type}">${item.item_type}</span>`;
@@ -10976,8 +10979,8 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
   function renderBibStats(stats) {
     const el = document.getElementById('bib-stats');
     if (!el) return;
-    const TYPE_LABEL = { pdf:'PDFs', link:'Links', video:'Vídeos', note:'Notas' };
-    const TYPE_COLOR = { pdf:'#E8362A', link:'#2979E0', video:'#8B5CF6', note:'#22C55E' };
+    const TYPE_LABEL = { pdf:'PDFs', link:'Links', video:'Vídeos', note:'Notas', image:'Imagens', audio:'Áudios', file:'Arquivos' };
+    const TYPE_COLOR = { pdf:'#E8362A', link:'#2979E0', video:'#8B5CF6', note:'#22C55E', image:'#F59E0B', audio:'#06B6D4', file:'#6B7280' };
     const byType = stats.by_type || {};
     const total = stats.total || 0;
     const sizeMb = stats.total_size_mb || 0;

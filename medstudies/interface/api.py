@@ -2057,18 +2057,9 @@ def flashcard_stats():
     total = db.query(FlashCard).count()
     reviewed_today = db.query(FlashCard).filter(FlashCard.last_reviewed >= today_start).count()
     # streak: consecutive days with at least one review
+    from datetime import timedelta
     all_cards = db.query(FlashCard).filter(FlashCard.last_reviewed.isnot(None)).all()
     reviewed_dates = sorted({c.last_reviewed.date() for c in all_cards}, reverse=True)
-    streak = 0
-    check = date.today()
-    for d in reviewed_dates:
-        if d == check:
-            streak += 1
-            check = check.replace(day=check.day - 1) if check.day > 1 else check  # rough; timedelta below
-        else:
-            break
-    # proper streak with timedelta
-    from datetime import timedelta
     streak = 0
     check = date.today()
     for d in reviewed_dates:
@@ -2938,7 +2929,7 @@ def get_conquistas():
     topics_count   = db.query(Topic).count()
     tags_count     = db.query(Tag).count()
     sessions_count = db.query(StudySession).count()
-    session_mins   = sum((s.duration_minutes or 0) for s in db.query(StudySession).all())
+    session_mins   = db.query(func.sum(StudySession.duration_minutes)).scalar() or 0
 
     # Streak (current)
     days_with_q: set[date] = {q.answered_at.date() for q in questions}
@@ -2968,10 +2959,16 @@ def get_conquistas():
 
     sources = {q.source for q in questions if q.source}
     accuracy = round(correct_q / total_q * 100, 1) if total_q else 0
-    weak = sum(1 for t in db.query(Topic).all()
-               if sum(1 for q in questions if q.topic_id == t.id and not q.correct) /
-               max(1, sum(1 for q in questions if q.topic_id == t.id)) >= 0.5
-               and sum(1 for q in questions if q.topic_id == t.id) >= 3)
+    _topic_total: dict[int, int] = defaultdict(int)
+    _topic_wrong: dict[int, int] = defaultdict(int)
+    for q in questions:
+        _topic_total[q.topic_id] += 1
+        if not q.correct:
+            _topic_wrong[q.topic_id] += 1
+    weak = sum(
+        1 for tid, tot in _topic_total.items()
+        if tot >= 3 and _topic_wrong[tid] / tot >= 0.5
+    )
 
     fc_mastered = db.query(FlashCard).filter(FlashCard.interval_days >= 21).count()
     state = {

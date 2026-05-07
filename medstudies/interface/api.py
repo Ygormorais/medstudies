@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import json
 import csv as csv_module
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from collections import defaultdict
 
@@ -114,7 +114,7 @@ def today_summary():
     """
     from datetime import date as _date
     db = get_session()
-    today = datetime.utcnow()
+    today = datetime.now(timezone.utc)
 
     # SM-2 flashcards due
     fc_due = db.query(func.count(FlashCard.id)).filter(
@@ -259,18 +259,29 @@ class TopicIn(BaseModel):
 
 
 @app.get("/api/topics")
-def list_topics(subject_id: int | None = None):
+def list_topics(
+    subject_id: int | None = None,
+    skip: int = 0,
+    limit: int = 200,
+):
     db = get_session()
     q = db.query(Topic)
     if subject_id:
         q = q.filter_by(subject_id=subject_id)
-    return [
-        {"id": t.id, "name": t.name, "subject_id": t.subject_id,
-         "subject_name": t.subject.name, "anki_deck": t.anki_deck,
-         "notability_notebook": t.notability_notebook,
-         "is_favorite": bool(t.is_favorite)}
-        for t in q.order_by(Topic.name).all()
-    ]
+    total = q.count()
+    items = q.order_by(Topic.name).offset(skip).limit(limit).all()
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": [
+            {"id": t.id, "name": t.name, "subject_id": t.subject_id,
+             "subject_name": t.subject.name, "anki_deck": t.anki_deck,
+             "notability_notebook": t.notability_notebook,
+             "is_favorite": bool(t.is_favorite)}
+            for t in items
+        ],
+    }
 
 
 @app.post("/api/topics")
@@ -1165,7 +1176,7 @@ async def import_questions_csv(file: UploadFile):
             notes=row.get("notes") or row.get("observacao") or row.get("observação") or None,
             difficulty=row.get("difficulty") or row.get("dificuldade") or "medio",
             statement=row.get("statement") or row.get("enunciado") or None,
-            answered_at=answered_at or datetime.utcnow(),
+            answered_at=answered_at or datetime.now(timezone.utc),
         )
         db.add(q)
         imported += 1
@@ -1229,10 +1240,10 @@ def _sm2_update(review: TopicReview, quality: int) -> TopicReview:
     review.ease_factor = round(ef, 4)
     review.interval_days = interval
     review.repetitions = reps
-    review.last_reviewed = datetime.utcnow()
+    review.last_reviewed = datetime.now(timezone.utc)
 
     from datetime import timedelta
-    review.next_review = datetime.utcnow() + timedelta(days=interval)
+    review.next_review = datetime.now(timezone.utc) + timedelta(days=interval)
     return review
 
 
@@ -1249,7 +1260,7 @@ def reviews_due(limit: int = 20):
     """Return topics due for spaced-repetition review today (including never-reviewed)."""
     from sqlalchemy import or_
     db = get_session()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # LEFT JOIN: topics that have a review record due today OR no record at all
     rows = (
@@ -1286,7 +1297,7 @@ def reviews_due(limit: int = 20):
 def reviews_count():
     """Number of topics due for review right now."""
     db = get_session()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     count = (
         db.query(TopicReview)
         .filter((TopicReview.next_review <= now) | (TopicReview.next_review == None))
@@ -1334,7 +1345,7 @@ def add_question_and_update_sm2(body: QuestionIn):
     topic = db.get(Topic, body.topic_id)
     if not topic:
         raise HTTPException(status_code=404, detail="Tópico não encontrado.")
-    answered_at = datetime.fromisoformat(body.answered_at) if body.answered_at else datetime.utcnow()
+    answered_at = datetime.fromisoformat(body.answered_at) if body.answered_at else datetime.now(timezone.utc)
     q = Question(topic_id=body.topic_id, correct=body.correct,
                  source=body.source, notes=body.notes, answered_at=answered_at,
                  difficulty=body.difficulty, statement=body.statement or None)
@@ -1475,7 +1486,7 @@ def stats_trend():
     """
     from datetime import timedelta
     db = get_session()
-    today = datetime.utcnow().date()
+    today = datetime.now(timezone.utc).date()
     p1_end   = today
     p1_start = today - timedelta(days=13)   # last 14 days
     p2_end   = p1_start - timedelta(days=1)
@@ -1595,7 +1606,7 @@ def weekly_report():
     weak = [s for s in scores if s.total_questions >= 3 and s.error_rate > 0.4][:5]
 
     # SM2 due
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     sm2_due = db.query(TopicReview).filter(
         (TopicReview.next_review <= now) | (TopicReview.next_review == None)
     ).count()
@@ -1877,7 +1888,7 @@ def _sm2_update(ef: float, interval: float, reps: int, quality: int):
         reps += 1
         ef = ef + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)
         ef = max(1.3, ef)
-    next_rev = datetime.utcnow() + timedelta(days=max(1, interval))
+    next_rev = datetime.now(timezone.utc) + timedelta(days=max(1, interval))
     return round(ef, 4), interval, reps, next_rev
 
 
@@ -1892,7 +1903,7 @@ def mark_flashcard_reviewed(card_id: int, body: SM2RatingIn = None):
         c.ease_factor or 2.5, c.interval_days or 1.0, c.repetitions or 0, quality
     )
     c.times_reviewed = (c.times_reviewed or 0) + 1
-    c.last_reviewed  = datetime.utcnow()
+    c.last_reviewed  = datetime.now(timezone.utc)
     c.ease_factor    = ef
     c.interval_days  = interval
     c.repetitions    = reps
@@ -2059,7 +2070,7 @@ def history_by_difficulty():
 def stats_heatmap(days: int = 365):
     from datetime import timedelta
     db = get_session()
-    since = datetime.utcnow() - timedelta(days=days)
+    since = datetime.now(timezone.utc) - timedelta(days=days)
     questions = db.query(Question).filter(Question.answered_at >= since).all()
     counts: dict[str, int] = defaultdict(int)
     for q in questions:
@@ -2072,7 +2083,7 @@ def stats_heatmap(days: int = 365):
 @app.get("/api/flashcards/stats")
 def flashcard_stats():
     db = get_session()
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     total = db.query(FlashCard).count()
     reviewed_today = db.query(FlashCard).filter(FlashCard.last_reviewed >= today_start).count()
     # streak: consecutive days with at least one review
@@ -2104,7 +2115,7 @@ def flashcard_sm2_queue(limit: int = 20):
     """Due cards first (next_review <= now), then new cards, ordered by SM-2 schedule."""
     from sqlalchemy import asc, nulls_first, or_
     db = get_session()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     cards = (db.query(FlashCard, Topic, Subject)
                .join(Topic, FlashCard.topic_id == Topic.id)
                .join(Subject, Topic.subject_id == Subject.id)
@@ -2573,7 +2584,7 @@ def stats_period(days: int = 30):
     """Key stats filtered to last N days (0 = all time)."""
     from datetime import timedelta
     db = get_session()
-    since = datetime.utcnow() - timedelta(days=days) if days > 0 else datetime(2000, 1, 1)
+    since = datetime.now(timezone.utc) - timedelta(days=days) if days > 0 else datetime(2000, 1, 1)
 
     rows = (db.query(Question, Subject)
               .join(Topic, Question.topic_id == Topic.id)
@@ -2817,7 +2828,7 @@ def agenda_sm2(days: int = 14):
     """Cards and topics due for SM-2 review in the next N days, grouped by date."""
     from datetime import timedelta
     db = get_session()
-    now  = datetime.utcnow()
+    now  = datetime.now(timezone.utc)
     end  = now + timedelta(days=days)
 
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -3077,7 +3088,7 @@ def topic_detail(topic_id: int):
     correct_qs = db.query(Question).filter(Question.topic_id == topic_id, Question.correct == True).count()
 
     cards = db.query(FlashCard).filter(FlashCard.topic_id == topic_id).all()
-    due_cards = sum(1 for c in cards if c.next_review is None or c.next_review <= datetime.utcnow())
+    due_cards = sum(1 for c in cards if c.next_review is None or c.next_review <= datetime.now(timezone.utc))
 
     sessions = (db.query(StudySession).filter(StudySession.topic_id == topic_id)
                   .order_by(StudySession.started_at.desc()).limit(5).all())
@@ -3182,7 +3193,7 @@ def get_xp_history(days: int = 30):
     """Return daily XP earned for the last N days (cumulative line chart)."""
     from datetime import timedelta
     db = get_session()
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Daily XP from questions
     day_xp: dict[str, int] = defaultdict(int)
@@ -3688,15 +3699,26 @@ def _fmt_question(q: Question, db) -> dict:
 
 
 @app.get("/api/questions/bank")
-def question_bank_list(topic_id: int | None = None, subject_id: int | None = None, limit: int = 100):
+def question_bank_list(
+    topic_id: int | None = None,
+    subject_id: int | None = None,
+    skip: int = 0,
+    limit: int = 50,
+):
     with get_session() as db:
         q = db.query(Question).filter(Question.alternatives.isnot(None))
         if topic_id:
             q = q.filter(Question.topic_id == topic_id)
         if subject_id:
             q = q.join(Topic).filter(Topic.subject_id == subject_id)
-        items = q.order_by(Question.answered_at.desc()).limit(limit).all()
-        return [_fmt_question(i, db) for i in items]
+        total = q.count()
+        items = q.order_by(Question.answered_at.desc()).offset(skip).limit(limit).all()
+        return {
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "items": [_fmt_question(i, db) for i in items],
+        }
 
 
 @app.post("/api/questions/bank")
@@ -3726,7 +3748,7 @@ def question_answer(question_id: int, body: dict):
             raise HTTPException(404)
         q.chosen_alt = chosen
         q.correct = (chosen == (q.correct_alt or "").upper())
-        q.answered_at = datetime.utcnow()
+        q.answered_at = datetime.now(timezone.utc)
         if body.get("notes"):
             q.notes = body["notes"]
         db.commit()
@@ -3834,14 +3856,20 @@ async def question_bank_import_csv(file: UploadFile = File(...)):
 
 
 @app.get("/api/questions/bank/wrong")
-def question_bank_wrong(limit: int = 50):
+def question_bank_wrong(skip: int = 0, limit: int = 50):
     """Questions answered at least once and got wrong — for error review."""
     with get_session() as db:
-        items = (
+        q = (
             db.query(Question)
             .filter(Question.alternatives.isnot(None), Question.correct == False,
                     Question.chosen_alt.isnot(None))
             .order_by(Question.answered_at.desc())
-            .limit(limit).all()
         )
-        return [_fmt_question(q, db) for q in items]
+        total = q.count()
+        items = q.offset(skip).limit(limit).all()
+        return {
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "items": [_fmt_question(i, db) for i in items],
+        }

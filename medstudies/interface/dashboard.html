@@ -4533,7 +4533,8 @@
 
   async function loadTopicsForQuestion() {
     const subjectId = document.getElementById('q-subject').value;
-    const topics = await fetchJSON(`/api/topics?subject_id=${subjectId}`);
+    const res = await fetchJSON(`/api/topics?subject_id=${subjectId}`);
+    const topics = res.items ?? res;
     document.getElementById('q-topic').innerHTML =
       topics.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
   }
@@ -5189,7 +5190,8 @@
 
   async function loadQQTopics() {
     const subId = document.getElementById('qq-subject').value;
-    const topics = await fetchJSON(`/api/topics?subject_id=${subId}`);
+    const res = await fetchJSON(`/api/topics?subject_id=${subId}`);
+    const topics = res.items ?? res;
     document.getElementById('qq-topic').innerHTML = topics.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
   }
 
@@ -8802,7 +8804,8 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     const sid = subjectSel.value;
     if (!sid) { topicSel.innerHTML = '<option value="">— Selecione um assunto —</option>'; return; }
     try {
-      const topics = await fetchJSON(`/api/topics?subject_id=${sid}`);
+      const res = await fetchJSON(`/api/topics?subject_id=${sid}`);
+      const topics = res.items ?? res;
       topicSel.innerHTML = topics.length
         ? topics.map(t => `<option value="${t.id}">${t.name}</option>`).join('')
         : '<option value="">Nenhum tópico</option>';
@@ -9095,7 +9098,8 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
       // Banco mode: fetch MCQ questions
       let questions;
       try {
-        questions = await fetchJSON('/api/questions/bank?limit=200');
+        const bankRes = await fetchJSON('/api/questions/bank?limit=200');
+        questions = bankRes.items ?? bankRes;
       } catch(e) { toast('Erro ao carregar banco: ' + e.message, 'error'); return; }
       if (!questions.length) {
         toast('Banco vazio. Adicione questões no Banco de Questões primeiro.', 'error'); return;
@@ -10134,7 +10138,8 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     }
     // Fallback: find topic_id by name
     try {
-      const topics = await fetchJSON('/api/topics');
+      const res = await fetchJSON('/api/topics');
+      const topics = res.items ?? res;
       const t = topics.find(t => t.name === topicName);
       if (t) openNotes(t.id, topicName, subjectName);
       else toast('Tópico não encontrado para notas.');
@@ -11344,12 +11349,12 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     list.innerHTML = '<div class="empty"><span class="spinner"></span> Carregando...</div>';
     try {
       const subjectId = document.getElementById('banco-subject-filter')?.value || '';
-      const [items, stats, subjects] = await Promise.all([
+      const [bankRes, stats, subjects] = await Promise.all([
         fetchJSON('/api/questions/bank' + (subjectId ? `?subject_id=${subjectId}` : '')),
         fetchJSON('/api/questions/bank/stats').catch(() => ({})),
         fetchJSON('/api/subjects'),
       ]);
-      _bancoItems = items;
+      _bancoItems = bankRes.items ?? bankRes;
       // populate subject filter
       const sel = document.getElementById('banco-subject-filter');
       if (sel && subjects.length) {
@@ -11360,7 +11365,8 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
       // populate topic dropdown in add modal
       const topicSel = document.getElementById('qb-add-topic');
       if (topicSel && subjects.length) {
-        const allTopics = await fetchJSON('/api/topics').catch(() => []);
+        const allTopicsRes = await fetchJSON('/api/topics').catch(() => ({ items: [] }));
+        const allTopics = allTopicsRes.items ?? allTopicsRes;
         topicSel.innerHTML = '<option value="">Selecione o tópico *</option>' +
           allTopics.map(t => `<option value="${t.id}">[${t.subject_name}] ${t.name}</option>`).join('');
       }
@@ -11563,7 +11569,8 @@ ${qItems  ? `<h2>📋 Questões Recentes</h2><table><thead><tr><th>✓/✗</th><
     const list = document.getElementById('banco-erros-list');
     list.innerHTML = '<div class="empty"><span class="spinner"></span> Carregando...</div>';
     try {
-      const items = await fetchJSON('/api/questions/bank/wrong');
+      const wrongRes = await fetchJSON('/api/questions/bank/wrong');
+      const items = wrongRes.items ?? wrongRes;
       if (!items.length) {
         list.innerHTML = '<div class="empty" style="padding:32px 0">🎉 Nenhum erro registrado ainda!</div>';
         return;

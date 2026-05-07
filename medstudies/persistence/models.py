@@ -2,7 +2,10 @@
 SQLAlchemy ORM models. Topic is the central entity — everything links to it.
 """
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 from sqlalchemy import (
     Column, Index, Integer, String, Float, DateTime, ForeignKey,
     Boolean, Text, UniqueConstraint,
@@ -21,7 +24,7 @@ class Subject(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(120), unique=True, nullable=False)
     exam_weight = Column(Float, default=1.0)  # relative importance in target exam
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     topics = relationship("Topic", back_populates="subject", cascade="all, delete-orphan")
 
@@ -47,7 +50,7 @@ class Topic(Base):
     external_ref = Column(String(200), nullable=True)       # future: Notion page id, etc.
     study_notes = Column(Text, nullable=True)               # free-form study notes / mnemonics
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     subject = relationship("Subject", back_populates="topics")
     parent = relationship("Topic", remote_side="Topic.id", back_populates="children")
@@ -74,7 +77,7 @@ class Question(Base):
     id = Column(Integer, primary_key=True)
     topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
     source = Column(String(100), nullable=True)   # e.g. "Medcof 2024 Mock #3"
-    answered_at = Column(DateTime, default=datetime.utcnow)
+    answered_at = Column(DateTime, default=_utcnow)
     correct = Column(Boolean, nullable=False)
     notes = Column(Text, nullable=True)
     difficulty = Column(String(20), default="medio", nullable=True)  # facil | medio | dificil
@@ -102,7 +105,7 @@ class StudySession(Base):
     id = Column(Integer, primary_key=True)
     topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
     session_type = Column(String(50), default="review")  # review | practice | lecture
-    started_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, default=_utcnow)
     duration_minutes = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
 
@@ -123,7 +126,7 @@ class AnkiSnapshot(Base):
 
     id = Column(Integer, primary_key=True)
     topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
-    synced_at = Column(DateTime, default=datetime.utcnow)
+    synced_at = Column(DateTime, default=_utcnow)
 
     deck_name = Column(String(200), nullable=False)
     total_cards = Column(Integer, default=0)
@@ -167,7 +170,7 @@ class FlashCard(Base):
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
     hint = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
     times_reviewed = Column(Integer, default=0)
     last_reviewed = Column(DateTime, nullable=True)
     # SM-2 fields
@@ -210,7 +213,7 @@ class DailyPlan(Base):
     __tablename__ = "daily_plans"
 
     id = Column(Integer, primary_key=True)
-    generated_at = Column(DateTime, default=datetime.utcnow)
+    generated_at = Column(DateTime, default=_utcnow)
     plan_date = Column(String(10), nullable=False)  # YYYY-MM-DD
     plan_json = Column(Text, nullable=False)         # serialized plan items
 
@@ -232,7 +235,7 @@ class EditorialTopic(Base):
     topic_name   = Column(String(200), nullable=False)
     weight_pct   = Column(Float, default=0.0)            # % importance in edital
     topic_id     = Column(Integer, ForeignKey("topics.id"), nullable=True)  # matched topic
-    created_at   = Column(DateTime, default=datetime.utcnow)
+    created_at   = Column(DateTime, default=_utcnow)
 
     topic = relationship("Topic")
 
@@ -274,7 +277,7 @@ class LibraryItem(Base):
     source      = Column(String(200), nullable=True)   # e.g. "USP 2024", "PubMed"
     year        = Column(Integer, nullable=True)
     is_favorite = Column(Boolean, default=False)
-    created_at  = Column(DateTime, default=datetime.utcnow)
+    created_at  = Column(DateTime, default=_utcnow)
 
     subject = relationship("Subject")
     topic   = relationship("Topic")

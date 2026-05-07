@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import csv as csv_module
+import logging
 from datetime import date, datetime, timezone
 from pathlib import Path
 from collections import defaultdict
@@ -23,6 +24,8 @@ from medstudies.engine.scorer import TopicScorer
 from medstudies.engine.weekly_planner import WeeklyPlanBuilder
 from medstudies.ingestion.mock_exam_adapter import MockExamAdapter
 from medstudies.ingestion.csv_adapter import CSVAdapter
+
+_log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app):
@@ -140,24 +143,34 @@ def today_summary():
         EditorialTopic.weight_pct > 0,
     ).scalar() or 0
 
-    # Subjects with highest error rate
-    from medstudies.engine.scorer import TopicScorer
-    scores = TopicScorer(db).score_all()
-    from collections import defaultdict
-    subj_acc: dict[str, dict] = defaultdict(lambda: {"correct": 0, "total": 0})
-    for s in scores:
-        if s.total_questions > 0:
-            subj_acc[s.subject_name]["total"] += s.total_questions
-            subj_acc[s.subject_name]["correct"] += round(s.total_questions * (1 - s.error_rate))
+    # Subjects with highest error rate (direct SQL, no full scorer)
+    subj_rows = (db.query(
+                    Subject.name,
+                    func.count().label("total"),
+                    func.sum(func.cast(Question.correct, Integer)).label("correct"),
+                 )
+                 .join(Topic, Question.topic_id == Topic.id)
+                 .join(Subject, Topic.subject_id == Subject.id)
+                 .group_by(Subject.name)
+                 .having(func.count() >= 3)
+                 .all())
     weak_subjects = sorted(
-        [{"subject": k, "error_rate": round((v["total"]-v["correct"])/v["total"]*100,1), "total": v["total"]}
-         for k, v in subj_acc.items() if v["total"] >= 3],
+        [{"subject": sname, "total": total,
+          "error_rate": round((total - (correct or 0)) / total * 100, 1) if total else 0}
+         for sname, total, correct in subj_rows],
         key=lambda x: x["error_rate"], reverse=True
     )[:5]
 
-    # Topics overdue for review (days_since_review > 14)
-    scores_overdue = [s for s in scores if s.days_since_review > 14]
-    overdue_count = len(scores_overdue)
+    # Topics overdue for review (no question/session activity in last 14 days)
+    from datetime import timedelta as _td
+    cutoff = today - _td(days=14)
+    recently_active = set()
+    for (tid,) in db.query(Question.topic_id).filter(Question.answered_at >= cutoff).distinct().all():
+        recently_active.add(tid)
+    for (tid,) in db.query(StudySession.topic_id).filter(StudySession.started_at >= cutoff).distinct().all():
+        recently_active.add(tid)
+    total_topics_count = db.query(func.count(Topic.id)).scalar() or 0
+    overdue_count = total_topics_count - len(recently_active)
 
     return {
         "fc_due": fc_due,
@@ -212,7 +225,8 @@ def plan_history(limit: int = 30):
                              "priority_score": i.get("priority_score",0)}
                            for i in items],
             })
-        except Exception:
+        except Exception as exc:
+            _log.warning("plan_history: record id=%s skipped — %s", r.id, exc)
             continue
     return result
 
@@ -493,16 +507,21 @@ def topic_history(topic_id: int):
     topic = db.get(Topic, topic_id)
     if not topic:
         raise HTTPException(status_code=404, detail="Tópico não encontrado.")
-    questions = db.query(Question).filter_by(topic_id=topic_id).order_by(Question.answered_at).all()
-    groups: dict[str, list] = defaultdict(list)
-    for q in questions:
-        groups[q.source or "Manual"].append(q)
-    history = []
-    for source, qs in groups.items():
-        total, wrong = len(qs), sum(1 for q in qs if not q.correct)
-        history.append({"source": source, "date": min(q.answered_at for q in qs).strftime("%d/%m/%Y"),
-                        "total": total, "wrong": wrong, "correct": total - wrong,
-                        "error_rate_pct": round(wrong / total * 100, 1) if total else 0})
+    rows = (db.query(
+                func.coalesce(Question.source, "Manual"),
+                func.count().label("total"),
+                func.sum(func.cast(~Question.correct, Integer)).label("wrong"),
+                func.min(Question.answered_at).label("first_at"),
+            )
+            .filter(Question.topic_id == topic_id)
+            .group_by(func.coalesce(Question.source, "Manual"))
+            .order_by(func.min(Question.answered_at)).all())
+    history = [
+        {"source": src, "date": first_at.strftime("%d/%m/%Y") if first_at else "",
+         "total": total, "wrong": wrong or 0, "correct": total - (wrong or 0),
+         "error_rate_pct": round((wrong or 0) / total * 100, 1) if total else 0}
+        for src, total, wrong, first_at in rows
+    ]
     return {"topic_id": topic_id, "topic_name": topic.name,
             "subject_name": topic.subject.name, "history": history}
 
@@ -1063,8 +1082,8 @@ def export_questions_filtered(
     filename = f"questoes_filtradas_{date.today().isoformat()}.csv"
     return StreamingResponse(
         iter([output.getvalue().encode('utf-8-sig')]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -1093,9 +1112,9 @@ def export_questions():
     output.seek(0)
     filename = f"questoes_{date.today().isoformat()}.csv"
     return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        iter([output.getvalue().encode("utf-8-sig")]),
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -1182,9 +1201,9 @@ def export_scores():
     output.seek(0)
     filename = f"scores_{date.today().isoformat()}.csv"
     return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        iter([output.getvalue().encode("utf-8-sig")]),
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -1335,24 +1354,22 @@ def add_question_and_update_sm2(body: QuestionIn):
 def reviews_stats():
     """SM-2 aggregate stats per subject for the progress chart."""
     db = get_session()
-    rows = (
-        db.query(TopicReview, Topic, Subject)
-        .join(Topic, TopicReview.topic_id == Topic.id)
-        .join(Subject, Topic.subject_id == Subject.id)
-        .all()
-    )
-    from collections import defaultdict
-    by_subject: dict[str, list] = defaultdict(list)
-    for rv, t, s in rows:
-        by_subject[s.name].append(rv)
-    result = []
-    for subj, rvs in sorted(by_subject.items()):
-        avg_ef  = round(sum(r.ease_factor for r in rvs) / len(rvs), 3)
-        avg_int = round(sum(r.interval_days for r in rvs) / len(rvs), 1)
-        avg_rep = round(sum(r.repetitions for r in rvs) / len(rvs), 1)
-        result.append({"subject": subj, "count": len(rvs),
-                       "avg_ef": avg_ef, "avg_interval": avg_int, "avg_repetitions": avg_rep})
-    return result
+    rows = (db.query(
+                Subject.name,
+                func.count().label("count"),
+                func.avg(TopicReview.ease_factor).label("avg_ef"),
+                func.avg(TopicReview.interval_days).label("avg_int"),
+                func.avg(TopicReview.repetitions).label("avg_rep"),
+            )
+            .join(Topic, TopicReview.topic_id == Topic.id)
+            .join(Subject, Topic.subject_id == Subject.id)
+            .group_by(Subject.name)
+            .order_by(Subject.name).all())
+    return [{"subject": sname, "count": cnt,
+             "avg_ef": round(avg_ef or 0, 3),
+             "avg_interval": round(avg_int or 0, 1),
+             "avg_repetitions": round(avg_rep or 0, 1)}
+            for sname, cnt, avg_ef, avg_int, avg_rep in rows]
 
 
 @app.post("/api/topics/import/csv")
@@ -1467,32 +1484,28 @@ def stats_trend():
 
     def dt(d): return datetime(d.year, d.month, d.day)
 
-    rows = (
-        db.query(Question, Topic, Subject)
-        .join(Topic, Question.topic_id == Topic.id)
-        .join(Subject, Topic.subject_id == Subject.id)
-        .filter(Question.answered_at >= dt(p2_start))
-        .all()
-    )
+    def _agg(start, end):
+        rows = (db.query(
+                    Subject.name,
+                    func.count().label("total"),
+                    func.sum(func.cast(~Question.correct, Integer)).label("wrong"),
+                 )
+                 .join(Topic, Question.topic_id == Topic.id)
+                 .join(Subject, Topic.subject_id == Subject.id)
+                 .filter(Question.answered_at >= dt(start),
+                         Question.answered_at < dt(end + timedelta(days=1)))
+                 .group_by(Subject.name).all())
+        return {sname: (total, wrong or 0) for sname, total, wrong in rows}
 
-    from collections import defaultdict
-    p1: dict[str, list] = defaultdict(list)
-    p2: dict[str, list] = defaultdict(list)
-    for q, t, s in rows:
-        d = q.answered_at.date()
-        if p1_start <= d <= p1_end:
-            p1[s.name].append(q)
-        elif p2_start <= d <= p2_end:
-            p2[s.name].append(q)
+    p1_data = _agg(p1_start, p1_end)
+    p2_data = _agg(p2_start, p2_end)
 
-    all_subjects = sorted(set(list(p1.keys()) + list(p2.keys())))
     result = []
-    for subj in all_subjects:
-        qs1 = p1.get(subj, [])
-        qs2 = p2.get(subj, [])
-        def pct(qs): return round(sum(1 for q in qs if not q.correct) / len(qs) * 100, 1) if qs else None
-        c = pct(qs1)
-        p = pct(qs2)
+    for subj in sorted(set(p1_data) | set(p2_data)):
+        t1, w1 = p1_data.get(subj, (0, 0))
+        t2, w2 = p2_data.get(subj, (0, 0))
+        c = round(w1 / t1 * 100, 1) if t1 else None
+        p = round(w2 / t2 * 100, 1) if t2 else None
         if c is None:
             continue
         delta = round(c - p, 1) if p is not None else None
@@ -1504,8 +1517,8 @@ def stats_trend():
             "subject": subj,
             "current_pct": c,
             "previous_pct": p,
-            "current_total": len(qs1),
-            "previous_total": len(qs2),
+            "current_total": t1,
+            "previous_total": t2,
             "delta": delta,
             "trend": trend,
         })
@@ -1519,36 +1532,28 @@ def wrong_topics(top: int = 20):
     Returns topics with at least one wrong answer, sorted by wrong count desc.
     """
     db = get_session()
-    rows = (
-        db.query(Topic, Subject, Question)
-        .join(Subject, Topic.subject_id == Subject.id)
-        .join(Question, Question.topic_id == Topic.id)
-        .filter(Question.correct == False)
-        .all()
-    )
-    from collections import defaultdict
-    by_topic: dict[int, dict] = {}
-    for t, s, q in rows:
-        if t.id not in by_topic:
-            by_topic[t.id] = {"topic_id": t.id, "topic_name": t.name,
-                              "subject_name": s.name, "wrong": 0,
-                              "error_rate_pct": 0, "total": 0}
-        by_topic[t.id]["wrong"] += 1
-
-    # Get totals
-    all_q = db.query(Question, Topic).join(Topic, Question.topic_id == Topic.id).all()
-    totals: dict[int, int] = defaultdict(int)
-    for q, t in all_q:
-        totals[t.id] += 1
-
-    result = []
-    for tid, d in by_topic.items():
-        total = totals.get(tid, d["wrong"])
-        d["total"] = total
-        d["error_rate_pct"] = round(d["wrong"] / total * 100, 1) if total else 0
-        result.append(d)
-
-    return sorted(result, key=lambda x: x["wrong"], reverse=True)[:top]
+    rows = (db.query(
+                Topic.id,
+                Topic.name,
+                Subject.name,
+                func.count().label("total"),
+                func.sum(func.cast(~Question.correct, Integer)).label("wrong"),
+            )
+            .join(Subject, Topic.subject_id == Subject.id)
+            .join(Question, Question.topic_id == Topic.id)
+            .group_by(Topic.id, Topic.name, Subject.name)
+            .having(func.sum(func.cast(~Question.correct, Integer)) > 0)
+            .order_by(func.sum(func.cast(~Question.correct, Integer)).desc())
+            .limit(top)
+            .all())
+    return [
+        {
+            "topic_id": tid, "topic_name": tname, "subject_name": sname,
+            "total": total, "wrong": wrong or 0,
+            "error_rate_pct": round((wrong or 0) / total * 100, 1) if total else 0,
+        }
+        for tid, tname, sname, total, wrong in rows
+    ]
 
 
 @app.get("/api/reports/weekly")
@@ -1560,24 +1565,49 @@ def weekly_report():
     week_start = today - timedelta(days=today.weekday())
     week_start_dt = datetime(week_start.year, week_start.month, week_start.day)
 
-    week_q = (db.query(Question, Topic, Subject)
-               .join(Topic, Question.topic_id == Topic.id)
-               .join(Subject, Topic.subject_id == Subject.id)
-               .filter(Question.answered_at >= week_start_dt)
-               .all())
+    # Per-subject breakdown (SQL aggregation)
+    subj_rows = (db.query(
+                    Subject.name,
+                    func.count().label("total"),
+                    func.sum(func.cast(Question.correct, Integer)).label("correct"),
+                 )
+                 .join(Topic, Question.topic_id == Topic.id)
+                 .join(Subject, Topic.subject_id == Subject.id)
+                 .filter(Question.answered_at >= week_start_dt)
+                 .group_by(Subject.name)
+                 .order_by(func.count().desc())
+                 .all())
+    diff_rows = (db.query(
+                    func.coalesce(Question.difficulty, "medio"),
+                    func.count(),
+                 )
+                 .filter(Question.answered_at >= week_start_dt)
+                 .group_by(func.coalesce(Question.difficulty, "medio"))
+                 .all())
+    diff_map = {d: cnt for d, cnt in diff_rows}
 
-    # Per-subject breakdown
-    subj_map: dict[str, dict] = defaultdict(lambda: {"total": 0, "correct": 0})
-    diff_map: dict[str, int] = defaultdict(int)
-    for q, t, s in week_q:
-        subj_map[s.name]["total"] += 1
-        if q.correct:
-            subj_map[s.name]["correct"] += 1
-        diff_map[q.difficulty or "medio"] += 1
+    # Total for the week (aggregate)
+    week_totals = db.query(
+        func.count(),
+        func.sum(func.cast(Question.correct, Integer)),
+    ).filter(Question.answered_at >= week_start_dt).one()
+    total_w = week_totals[0] or 0
+    correct_w = week_totals[1] or 0
 
-    # Weak topics
-    scores = TopicScorer(db).score_all()
-    weak = [s for s in scores if s.total_questions >= 3 and s.error_rate > 0.4][:5]
+    # Weak topics: ≥3 questions, error rate >40% — targeted SQL, no full scorer
+    weak_rows = (db.query(
+                    Topic.name,
+                    Subject.name,
+                    func.count().label("total"),
+                    func.sum(func.cast(~Question.correct, Integer)).label("wrong"),
+                 )
+                 .join(Topic, Question.topic_id == Topic.id)
+                 .join(Subject, Topic.subject_id == Subject.id)
+                 .group_by(Topic.id, Topic.name, Subject.name)
+                 .having(func.count() >= 3)
+                 .order_by(func.sum(func.cast(~Question.correct, Integer)).desc())
+                 .limit(5)
+                 .all())
 
     # SM2 due
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -1587,8 +1617,6 @@ def weekly_report():
     total_topics = db.query(Topic).count()
     never = total_topics - db.query(TopicReview).count()
 
-    total_w = len(week_q)
-    correct_w = sum(1 for q, _, _ in week_q if q.correct)
     return {
         "week_start": week_start.isoformat(),
         "today": today.isoformat(),
@@ -1596,20 +1624,22 @@ def weekly_report():
         "correct": correct_w,
         "wrong": total_w - correct_w,
         "error_rate_pct": round((total_w - correct_w) / total_w * 100, 1) if total_w else 0,
-        "by_subject": sorted([
-            {"subject": k, "total": v["total"], "correct": v["correct"],
-             "error_rate_pct": round((v["total"] - v["correct"]) / v["total"] * 100, 1) if v["total"] else 0}
-            for k, v in subj_map.items()
-        ], key=lambda x: x["total"], reverse=True),
-        "by_difficulty": {"facil": diff_map["facil"], "medio": diff_map["medio"], "dificil": diff_map["dificil"]},
+        "by_subject": [
+            {"subject": sname, "total": total, "correct": correct or 0,
+             "error_rate_pct": round((total - (correct or 0)) / total * 100, 1) if total else 0}
+            for sname, total, correct in subj_rows
+        ],
+        "by_difficulty": {"facil": diff_map.get("facil", 0), "medio": diff_map.get("medio", 0), "dificil": diff_map.get("dificil", 0)},
         "weak_topics": [
-            {"topic": s.topic_name, "subject": s.subject_name,
-             "error_rate_pct": round(s.error_rate * 100, 1), "total": s.total_questions}
-            for s in weak
+            {"topic": tname, "subject": sname,
+             "error_rate_pct": round((wrong or 0) / total * 100, 1) if total else 0,
+             "total": total}
+            for tname, sname, total, wrong in weak_rows
+            if total and (wrong or 0) / total > 0.4
         ],
         "sm2_due": sm2_due + never,
         "total_topics": total_topics,
-        "subjects_studied": len(subj_map),
+        "subjects_studied": len(subj_rows),
     }
 
 
@@ -1626,7 +1656,13 @@ def notion_sync(payload: dict):
     topics = (db.query(Topic, Subject)
               .join(Subject, Topic.subject_id == Subject.id)
               .order_by(Subject.name, Topic.name).all())
-    scores = {s.topic_id: s for s in TopicScorer(db).score_all()}
+    _err_rows = (db.query(
+                    Question.topic_id,
+                    func.count().label("total"),
+                    func.sum(func.cast(~Question.correct, Integer)).label("wrong"),
+                 ).group_by(Question.topic_id).all())
+    scores = {tid: round((wrong or 0) / total * 100, 1) if total else 0
+              for tid, total, wrong in _err_rows}
 
     headers = {
         "Authorization": f"Bearer {notion_token}",
@@ -1646,14 +1682,14 @@ def notion_sync(payload: dict):
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Notion indisponível: {e}")
 
+    q_totals = {tid: total for tid, total, _ in _err_rows}
     created, errors = 0, []
     for t, s in topics[:50]:  # cap at 50 to avoid rate limits
-        sc = scores.get(t.id)
         props = {
             "Tópico": {"title": [{"text": {"content": t.name[:2000]}}]},
             "Assunto": {"rich_text": [{"text": {"content": s.name}}]},
-            "Taxa de Erro (%)": {"number": round(sc.error_rate * 100, 1) if sc else 0},
-            "Total Questões": {"number": sc.total_questions if sc else 0},
+            "Taxa de Erro (%)": {"number": scores.get(t.id, 0)},
+            "Total Questões": {"number": q_totals.get(t.id, 0)},
             "Notas": {"rich_text": [{"text": {"content": (t.study_notes or "")[:2000]}}]},
         }
         body = json.dumps({"parent": {"database_id": database_id}, "properties": props}).encode()
@@ -1712,33 +1748,34 @@ def simulado_questions(subject_id: int | None = None, count: int = 20):
 def stats_sources():
     """Error rate and volume per question source/banco."""
     db = get_session()
-    rows = (
-        db.query(Question, Topic, Subject)
-        .join(Topic, Question.topic_id == Topic.id)
-        .join(Subject, Topic.subject_id == Subject.id)
-        .all()
-    )
-    from collections import defaultdict
-    by_src: dict[str, dict] = defaultdict(lambda: {"total": 0, "correct": 0, "topics": set(), "subjects": set()})
-    for q, t, s in rows:
-        src = q.source or "Manual"
-        by_src[src]["total"] += 1
-        if q.correct:
-            by_src[src]["correct"] += 1
-        by_src[src]["topics"].add(t.name)
-        by_src[src]["subjects"].add(s.name)
+    src_expr = func.coalesce(Question.source, "Manual")
+    agg_rows = (db.query(
+                    src_expr,
+                    func.count().label("total"),
+                    func.sum(func.cast(Question.correct, Integer)).label("correct"),
+                    func.count(func.distinct(Topic.id)).label("uniq_topics"),
+                )
+                .join(Topic, Question.topic_id == Topic.id)
+                .group_by(src_expr).all())
+    subj_rows = (db.query(src_expr, Subject.name)
+                 .join(Topic, Question.topic_id == Topic.id)
+                 .join(Subject, Topic.subject_id == Subject.id)
+                 .group_by(src_expr, Subject.name).all())
+    subj_by_src: dict[str, list] = {}
+    for src, sname in subj_rows:
+        subj_by_src.setdefault(src, []).append(sname)
     result = []
-    for src, v in by_src.items():
-        total = v["total"]
-        wrong = total - v["correct"]
+    for src, total, correct, uniq_topics in agg_rows:
+        correct = correct or 0
+        wrong = total - correct
         result.append({
             "source": src,
             "total": total,
-            "correct": v["correct"],
+            "correct": correct,
             "wrong": wrong,
             "error_rate_pct": round(wrong / total * 100, 1) if total else 0,
-            "unique_topics": len(v["topics"]),
-            "subjects": sorted(v["subjects"]),
+            "unique_topics": uniq_topics,
+            "subjects": sorted(subj_by_src.get(src, [])),
         })
     return sorted(result, key=lambda x: x["total"], reverse=True)
 
@@ -1932,10 +1969,18 @@ def list_favorites():
               .join(Subject, Topic.subject_id == Subject.id)
               .filter(Topic.is_favorite == True)
               .order_by(Subject.name, Topic.name).all())
-    scores = {s.topic_id: s for s in TopicScorer(db).score_all()}
+    topic_ids = [t.id for t, _ in topics]
+    err_rows = (db.query(
+                    Question.topic_id,
+                    func.count().label("total"),
+                    func.sum(func.cast(~Question.correct, Integer)).label("wrong"),
+                ).filter(Question.topic_id.in_(topic_ids))
+                .group_by(Question.topic_id).all()) if topic_ids else []
+    err_map = {tid: round((wrong or 0) / total * 100, 1) if total else 0
+               for tid, total, wrong in err_rows}
     return [{"id": t.id, "name": t.name, "subject_name": s.name,
              "study_notes": t.study_notes or "",
-             "error_rate_pct": round(scores[t.id].error_rate * 100, 1) if t.id in scores else 0,
+             "error_rate_pct": err_map.get(t.id, 0),
              "is_favorite": True}
             for t, s in topics]
 
@@ -1981,37 +2026,46 @@ def stats_evolution(weeks: int = 8):
 @app.get("/api/stats/velocity")
 def stats_velocity():
     """Questions count by hour of day (0-23)."""
+    from sqlalchemy import text as _text
     db = get_session()
-    questions = db.query(Question).all()
+    rows = db.execute(_text(
+        "SELECT CAST(strftime('%H', answered_at) AS INTEGER) AS h, "
+        "COUNT(*) AS cnt, SUM(CASE WHEN correct THEN 1 ELSE 0 END) AS ok "
+        "FROM questions GROUP BY h"
+    )).fetchall()
     by_hour = [0] * 24
     correct_by_hour = [0] * 24
-    for q in questions:
-        h = q.answered_at.hour
-        by_hour[h] += 1
-        if q.correct:
-            correct_by_hour[h] += 1
+    for h, cnt, ok in rows:
+        if h is not None:
+            by_hour[h] = cnt
+            correct_by_hour[h] = ok or 0
     peak = by_hour.index(max(by_hour)) if any(by_hour) else 0
-    total = sum(by_hour)
     return {
         "by_hour": by_hour,
         "correct_by_hour": correct_by_hour,
         "peak_hour": peak,
-        "total": total,
+        "total": sum(by_hour),
     }
 
 
 @app.get("/api/stats/by-weekday")
 def stats_by_weekday():
     """Questions count and error rate by day of week (0=Mon … 6=Sun)."""
+    from sqlalchemy import text as _text
     db = get_session()
-    questions = db.query(Question).all()
+    # SQLite strftime('%w') = 0=Sun..6=Sat; remap to 0=Mon..6=Sun
+    rows = db.execute(_text(
+        "SELECT CAST(strftime('%w', answered_at) AS INTEGER) AS wd, "
+        "COUNT(*) AS cnt, SUM(CASE WHEN correct THEN 0 ELSE 1 END) AS wrong "
+        "FROM questions GROUP BY wd"
+    )).fetchall()
     by_day = [0] * 7
     wrong_by_day = [0] * 7
-    for q in questions:
-        d = q.answered_at.weekday()  # 0=Mon
-        by_day[d] += 1
-        if not q.correct:
-            wrong_by_day[d] += 1
+    for wd, cnt, wrong in rows:
+        if wd is not None:
+            mon_based = (wd - 1) % 7  # Sun(0)→6, Mon(1)→0, …, Sat(6)→5
+            by_day[mon_based] = cnt
+            wrong_by_day[mon_based] = wrong or 0
     error_rate = [round(wrong_by_day[d] / by_day[d] * 100, 1) if by_day[d] else 0 for d in range(7)]
     worst = error_rate.index(max(error_rate)) if any(by_day) else 0
     return {"by_day": by_day, "wrong_by_day": wrong_by_day, "error_rate": error_rate, "worst_day": worst}
@@ -2019,18 +2073,25 @@ def stats_by_weekday():
 
 @app.get("/api/history/overview")
 def history_overview():
+    from sqlalchemy import text as _text
     db = get_session()
-    questions = db.query(Question).order_by(Question.answered_at).all()
-    groups: dict[str, list] = defaultdict(list)
-    for q in questions:
-        groups[q.source or "Manual"].append(q)
+    rows = db.execute(_text(
+        "SELECT COALESCE(source, 'Manual') AS src, "
+        "COUNT(*) AS total, "
+        "SUM(CASE WHEN correct THEN 0 ELSE 1 END) AS wrong, "
+        "MIN(answered_at) AS first_at "
+        "FROM questions GROUP BY src ORDER BY first_at"
+    )).fetchall()
     result = []
-    for source, qs in groups.items():
-        total, wrong = len(qs), sum(1 for q in qs if not q.correct)
-        result.append({"source": source, "date": min(q.answered_at for q in qs).strftime("%d/%m/%Y"),
-                       "total": total, "wrong": wrong,
-                       "error_rate_pct": round(wrong / total * 100, 1) if total else 0})
-    return sorted(result, key=lambda x: x["date"])
+    for src, total, wrong, first_at in rows:
+        date_str = first_at[:10] if first_at else ""
+        # reformat YYYY-MM-DD → DD/MM/YYYY
+        if date_str and len(date_str) == 10:
+            date_str = f"{date_str[8:10]}/{date_str[5:7]}/{date_str[:4]}"
+        result.append({"source": src, "date": date_str, "total": total,
+                       "wrong": wrong or 0,
+                       "error_rate_pct": round((wrong or 0) / total * 100, 1) if total else 0})
+    return result
 
 
 # ── Dificuldade breakdown ─────────────────────────────────────────────────────
@@ -2038,13 +2099,17 @@ def history_overview():
 @app.get("/api/history/by-difficulty")
 def history_by_difficulty():
     db = get_session()
-    qs = db.query(Question).all()
+    rows = (db.query(
+                func.coalesce(Question.difficulty, "medio"),
+                func.count().label("total"),
+                func.sum(func.cast(Question.correct, Integer)).label("correct"),
+            )
+            .group_by(func.coalesce(Question.difficulty, "medio"))
+            .all())
+    by_level = {d: {"total": t, "correct": c or 0, "wrong": t - (c or 0)} for d, t, c in rows}
     result = {}
     for level in ("facil", "medio", "dificil"):
-        bucket = [q for q in qs if (q.difficulty or "medio") == level]
-        total = len(bucket)
-        correct = sum(1 for q in bucket if q.correct)
-        result[level] = {"total": total, "correct": correct, "wrong": total - correct}
+        result[level] = by_level.get(level, {"total": 0, "correct": 0, "wrong": 0})
     return result
 
 
@@ -2053,13 +2118,14 @@ def history_by_difficulty():
 @app.get("/api/stats/heatmap")
 def stats_heatmap(days: int = 365):
     from datetime import timedelta
+    from sqlalchemy import text as _text
     db = get_session()
-    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
-    questions = db.query(Question).filter(Question.answered_at >= since).all()
-    counts: dict[str, int] = defaultdict(int)
-    for q in questions:
-        counts[q.answered_at.strftime("%Y-%m-%d")] += 1
-    return {"counts": counts}
+    since = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)).strftime("%Y-%m-%d")
+    rows = db.execute(_text(
+        "SELECT date(answered_at) AS d, COUNT(*) AS cnt "
+        "FROM questions WHERE answered_at >= :since GROUP BY d"
+    ), {"since": since}).fetchall()
+    return {"counts": {d: cnt for d, cnt in rows}}
 
 
 # ── Flash Card Stats & SM-2 Queue ─────────────────────────────────────────────
@@ -2129,8 +2195,8 @@ def export_flashcards_csv():
     output.seek(0)
     return StreamingResponse(
         iter([output.getvalue().encode("utf-8-sig")]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=flashcards_{date.today().isoformat()}.csv"},
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": f'attachment; filename="flashcards_{date.today().isoformat()}.csv"'},
     )
 
 
@@ -2150,7 +2216,7 @@ def export_flashcards():
     return StreamingResponse(
         io.BytesIO(content.encode("utf-8")),
         media_type="text/plain; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=medstudies_flashcards.txt"},
+        headers={"Content-Disposition": 'attachment; filename="medstudies_flashcards.txt"'},
     )
 
 
@@ -2311,7 +2377,8 @@ def bulk_questions(body: BulkQuestionsIn):
                          difficulty=row.difficulty, notes=row.notes)
             db.add(q)
             created += 1
-        except Exception:
+        except Exception as exc:
+            _log.warning("bulk_questions: row skipped — %s", exc)
             errors += 1
     db.commit()
     return {"created": created, "skipped": skipped, "errors": errors}
@@ -2338,32 +2405,31 @@ def flashcards_weekly():
 def simulados_compare():
     """Per-simulado breakdown: total, correct, wrong, error_rate for each source."""
     db = get_session()
-    questions = db.query(Question).filter(Question.source.isnot(None)).all()
-    groups: dict[str, dict] = {}
-    for q in questions:
-        src = q.source or "Manual"
-        if src not in groups:
-            groups[src] = {"source": src, "total": 0, "correct": 0,
-                           "first_date": q.answered_at}
-        groups[src]["total"] += 1
-        if q.correct:
-            groups[src]["correct"] += 1
-        if q.answered_at < groups[src]["first_date"]:
-            groups[src]["first_date"] = q.answered_at
-
+    rows = (db.query(
+                Question.source,
+                func.count().label("total"),
+                func.sum(func.cast(Question.correct, Integer)).label("correct"),
+                func.min(Question.answered_at).label("first_at"),
+            )
+            .filter(Question.source.isnot(None))
+            .group_by(Question.source)
+            .order_by(func.min(Question.answered_at))
+            .all())
     result = []
-    for src, d in groups.items():
-        wrong = d["total"] - d["correct"]
+    for src, total, correct, first_at in rows:
+        correct = correct or 0
+        wrong = total - correct
+        date_str = first_at.strftime("%d/%m/%Y") if first_at else ""
         result.append({
             "source": src,
-            "total": d["total"],
-            "correct": d["correct"],
+            "total": total,
+            "correct": correct,
             "wrong": wrong,
-            "accuracy_pct": round(d["correct"] / d["total"] * 100, 1) if d["total"] else 0,
-            "error_pct": round(wrong / d["total"] * 100, 1) if d["total"] else 0,
-            "date": d["first_date"].strftime("%d/%m/%Y"),
+            "accuracy_pct": round(correct / total * 100, 1) if total else 0,
+            "error_pct": round(wrong / total * 100, 1) if total else 0,
+            "date": date_str,
         })
-    return sorted(result, key=lambda x: x["date"])
+    return result
 
 
 # ── Busca Global ──────────────────────────────────────────────────────────────
@@ -2561,28 +2627,32 @@ def stats_period(days: int = 30):
     db = get_session()
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days) if days > 0 else datetime(2000, 1, 1)
 
-    rows = (db.query(Question, Subject)
-              .join(Topic, Question.topic_id == Topic.id)
-              .join(Subject, Topic.subject_id == Subject.id)
-              .filter(Question.answered_at >= since).all())
+    total, correct = db.query(
+        func.count(), func.sum(func.cast(Question.correct, Integer))
+    ).filter(Question.answered_at >= since).one()
+    total = total or 0
+    correct = correct or 0
 
-    total = len(rows)
-    correct = sum(1 for q, _ in rows if q.correct)
-
-    subj_data: dict[str, list] = {}
-    for q, s in rows:
-        subj_data.setdefault(s.name, []).append(q)
-
-    subjects = []
-    for name, qs in subj_data.items():
-        t = len(qs); c = sum(1 for q in qs if q.correct)
-        subjects.append({"subject": name, "total": t, "correct": c,
-                         "accuracy_pct": round(c / t * 100, 1) if t else 0})
+    subj_rows = (db.query(
+                    Subject.name,
+                    func.count().label("total"),
+                    func.sum(func.cast(Question.correct, Integer)).label("correct"),
+                 )
+                 .join(Topic, Question.topic_id == Topic.id)
+                 .join(Subject, Topic.subject_id == Subject.id)
+                 .filter(Question.answered_at >= since)
+                 .group_by(Subject.name).all())
+    subjects = sorted(
+        [{"subject": sname, "total": t, "correct": c or 0,
+          "accuracy_pct": round((c or 0) / t * 100, 1) if t else 0}
+         for sname, t, c in subj_rows],
+        key=lambda x: x["accuracy_pct"], reverse=True
+    )
 
     return {
         "days": days, "total": total, "correct": correct, "wrong": total - correct,
         "accuracy_pct": round(correct / total * 100, 1) if total else 0,
-        "subjects": sorted(subjects, key=lambda x: x["accuracy_pct"], reverse=True),
+        "subjects": subjects,
     }
 
 
@@ -2672,10 +2742,21 @@ def topics_by_tag(tag_id: int):
     tag = db.get(Tag, tag_id)
     if not tag:
         raise HTTPException(status_code=404, detail="Tag não encontrada.")
-    scores = {s.topic_id: s for s in TopicScorer(db).score_all()}
+    topic_ids = [t.id for t in tag.topics]
+    err_rows = (db.query(
+                    Question.topic_id,
+                    func.count().label("total"),
+                    func.sum(func.cast(~Question.correct, Integer)).label("wrong"),
+                ).filter(Question.topic_id.in_(topic_ids))
+                .group_by(Question.topic_id).all()) if topic_ids else []
+    err_map = {tid: round((wrong or 0) / total * 100, 1) if total else 0
+               for tid, total, wrong in err_rows}
+    subjects = {s.id: s for s in db.query(Subject).filter(
+        Subject.id.in_([t.subject_id for t in tag.topics if t.subject_id])
+    ).all()}
     return [{"id": t.id, "name": t.name,
-             "subject_name": db.get(Subject, t.subject_id).name if t.subject_id else "",
-             "error_rate_pct": round(scores[t.id].error_rate * 100, 1) if t.id in scores else 0}
+             "subject_name": subjects[t.subject_id].name if t.subject_id in subjects else "",
+             "error_rate_pct": err_map.get(t.id, 0)}
             for t in tag.topics]
 
 
@@ -2792,8 +2873,8 @@ def anki_deep_sync():
                             "avg_interval": round(avg_interval, 1)})
         except HTTPException:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("anki_deep_sync: topic '%s' skipped — %s", t.name, exc)
 
     db.commit()
     return {"synced": synced, "details": details}
@@ -2934,9 +3015,10 @@ def get_conquistas():
     from datetime import timedelta
     db = get_session()
 
-    questions = db.query(Question).all()
-    total_q   = len(questions)
-    correct_q = sum(1 for q in questions if q.correct)
+    total_q, correct_q = db.query(
+        func.count(), func.sum(func.cast(Question.correct, Integer))
+    ).one()
+    correct_q = correct_q or 0
 
     fc_total    = db.query(FlashCard).count()
     fc_reviewed = db.query(FlashCard).filter(FlashCard.times_reviewed > 0).count()
@@ -2947,8 +3029,14 @@ def get_conquistas():
     sessions_count = db.query(StudySession).count()
     session_mins   = db.query(func.sum(StudySession.duration_minutes)).scalar() or 0
 
+    # Fetch only the minimal data needed for streak and weak-topic calculations
+    from sqlalchemy import text as _text
+    date_rows = db.execute(_text(
+        "SELECT DISTINCT date(answered_at) FROM questions ORDER BY 1"
+    )).fetchall()
+    days_with_q: set[date] = {date.fromisoformat(r[0]) for r in date_rows if r[0]}
+
     # Streak (current)
-    days_with_q: set[date] = {q.answered_at.date() for q in questions}
     streak = 0
     check  = date.today()
     while check in days_with_q:
@@ -2973,18 +3061,19 @@ def get_conquistas():
             best_streak = run; best_streak_end = run_end
     best_streak_end_str = best_streak_end.isoformat() if best_streak_end else None
 
-    sources = {q.source for q in questions if q.source}
+    sources_count = db.query(func.count(func.distinct(Question.source))).filter(
+        Question.source.isnot(None)
+    ).scalar() or 0
     accuracy = round(correct_q / total_q * 100, 1) if total_q else 0
-    _topic_total: dict[int, int] = defaultdict(int)
-    _topic_wrong: dict[int, int] = defaultdict(int)
-    for q in questions:
-        _topic_total[q.topic_id] += 1
-        if not q.correct:
-            _topic_wrong[q.topic_id] += 1
-    weak = sum(
-        1 for tid, tot in _topic_total.items()
-        if tot >= 3 and _topic_wrong[tid] / tot >= 0.5
-    )
+
+    # Weak topics: topics with ≥3 questions and ≥50% error rate
+    topic_rows = (db.query(
+            Question.topic_id,
+            func.count().label("tot"),
+            func.sum(func.cast(~Question.correct, Integer)).label("wrong"),
+        )
+        .group_by(Question.topic_id).all())
+    weak = sum(1 for _, tot, wrong in topic_rows if tot >= 3 and (wrong or 0) / tot >= 0.5)
 
     fc_mastered = db.query(FlashCard).filter(FlashCard.interval_days >= 21).count()
     state = {
@@ -2993,7 +3082,7 @@ def get_conquistas():
         "topics": topics_count, "tags": tags_count,
         "fc_total": fc_total, "fc_reviewed": fc_reviewed, "sm2_cards": sm2_cards,
         "sessions": sessions_count, "session_mins": session_mins,
-        "sources": len(sources), "weak": weak,
+        "sources": sources_count, "weak": weak,
         # aliases used by frontend conquistas
         "total_flashcards": fc_total,
         "fc_mastered": fc_mastered,
@@ -3007,18 +3096,21 @@ def get_conquistas():
 @app.get("/api/flashcards/maturity")
 def flashcards_maturity():
     """Cards bucketed by interval_days for maturity doughnut chart."""
+    from sqlalchemy import case
     db = get_session()
-    cards = db.query(FlashCard).all()
-    buckets = {"Novo (0-1d)": 0, "Aprendendo (2-6d)": 0,
-               "Jovem (7-20d)": 0, "Maduro (21-60d)": 0, "Veterano (>60d)": 0}
-    for c in cards:
-        iv = c.interval_days or 0
-        if iv <= 1:      buckets["Novo (0-1d)"] += 1
-        elif iv <= 6:    buckets["Aprendendo (2-6d)"] += 1
-        elif iv <= 20:   buckets["Jovem (7-20d)"] += 1
-        elif iv <= 60:   buckets["Maduro (21-60d)"] += 1
-        else:            buckets["Veterano (>60d)"] += 1
-    return {"total": len(cards), "buckets": [{"label": k, "count": v} for k, v in buckets.items()]}
+    bucket_expr = case(
+        (FlashCard.interval_days <= 1,  "Novo (0-1d)"),
+        (FlashCard.interval_days <= 6,  "Aprendendo (2-6d)"),
+        (FlashCard.interval_days <= 20, "Jovem (7-20d)"),
+        (FlashCard.interval_days <= 60, "Maduro (21-60d)"),
+        else_="Veterano (>60d)",
+    )
+    rows = (db.query(bucket_expr, func.count())
+              .group_by(bucket_expr).all())
+    order = ["Novo (0-1d)", "Aprendendo (2-6d)", "Jovem (7-20d)", "Maduro (21-60d)", "Veterano (>60d)"]
+    by_bucket = {label: cnt for label, cnt in rows}
+    buckets = [{"label": k, "count": by_bucket.get(k, 0)} for k in order]
+    return {"total": sum(b["count"] for b in buckets), "buckets": buckets}
 
 
 # ── Bulk Flash Cards ──────────────────────────────────────────────────────────
@@ -3152,12 +3244,17 @@ def level_from_xp(xp: int) -> tuple[int, int, int]:
 def get_xp():
     """Calculate total XP and level from all activities."""
     db = get_session()
-    questions = db.query(Question).all()
-    q_xp = sum(XP_PER_QUESTION_CORRECT if q.correct else XP_PER_QUESTION_WRONG for q in questions)
-    sess_xp = sum((s.duration_minutes or 0) * XP_PER_SESSION_MINUTE
-                  for s in db.query(StudySession).all())
-    fc_reviews = db.query(FlashCard).filter(FlashCard.times_reviewed > 0).all()
-    fc_xp = sum(XP_PER_FC_REVIEW + (XP_PER_FC_CORRECT if (c.repetitions or 0) > 0 else 0) for c in fc_reviews)
+    correct_cnt, wrong_cnt = db.query(
+        func.sum(func.cast(Question.correct, Integer)),
+        func.sum(func.cast(~Question.correct, Integer)),
+    ).one()
+    q_xp = (correct_cnt or 0) * XP_PER_QUESTION_CORRECT + (wrong_cnt or 0) * XP_PER_QUESTION_WRONG
+    sess_xp = (db.query(func.sum(StudySession.duration_minutes)).scalar() or 0) * XP_PER_SESSION_MINUTE
+    fc_correct_cnt, fc_total_reviewed = db.query(
+        func.sum(func.cast(FlashCard.repetitions > 0, Integer)),
+        func.count(),
+    ).filter(FlashCard.times_reviewed > 0).one()
+    fc_xp = (fc_total_reviewed or 0) * XP_PER_FC_REVIEW + (fc_correct_cnt or 0) * XP_PER_FC_CORRECT
     total_xp = q_xp + sess_xp + fc_xp
     level, xp_in, xp_needed = level_from_xp(total_xp)
     return {
@@ -3178,21 +3275,32 @@ def get_xp_history(days: int = 30):
     db = get_session()
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
-    # Daily XP from questions
+    from sqlalchemy import text as _text
     day_xp: dict[str, int] = defaultdict(int)
-    for q in db.query(Question).filter(Question.answered_at >= cutoff).all():
-        day = q.answered_at.strftime("%Y-%m-%d")
-        day_xp[day] += XP_PER_QUESTION_CORRECT if q.correct else XP_PER_QUESTION_WRONG
+
+    # Daily XP from questions
+    for d, correct, wrong in db.query(
+        func.date(Question.answered_at),
+        func.sum(func.cast(Question.correct, Integer)),
+        func.sum(func.cast(~Question.correct, Integer)),
+    ).filter(Question.answered_at >= cutoff).group_by(func.date(Question.answered_at)).all():
+        day_xp[d] += (correct or 0) * XP_PER_QUESTION_CORRECT + (wrong or 0) * XP_PER_QUESTION_WRONG
 
     # Daily XP from sessions
-    for s in db.query(StudySession).filter(StudySession.started_at >= cutoff).all():
-        day = s.started_at.strftime("%Y-%m-%d")
-        day_xp[day] += (s.duration_minutes or 0) * XP_PER_SESSION_MINUTE
+    for d, mins in db.query(
+        func.date(StudySession.started_at),
+        func.sum(StudySession.duration_minutes),
+    ).filter(StudySession.started_at >= cutoff).group_by(func.date(StudySession.started_at)).all():
+        day_xp[d] += (mins or 0) * XP_PER_SESSION_MINUTE
 
     # Daily XP from FC reviews
-    for c in db.query(FlashCard).filter(FlashCard.last_reviewed >= cutoff, FlashCard.last_reviewed != None).all():
-        day = c.last_reviewed.strftime("%Y-%m-%d")
-        day_xp[day] += XP_PER_FC_REVIEW + (XP_PER_FC_CORRECT if (c.repetitions or 0) > 0 else 0)
+    for d, total, correct_reps in db.query(
+        func.date(FlashCard.last_reviewed),
+        func.count(),
+        func.sum(func.cast(FlashCard.repetitions > 0, Integer)),
+    ).filter(FlashCard.last_reviewed >= cutoff, FlashCard.last_reviewed.isnot(None)
+    ).group_by(func.date(FlashCard.last_reviewed)).all():
+        day_xp[d] += (total or 0) * XP_PER_FC_REVIEW + (correct_reps or 0) * XP_PER_FC_CORRECT
 
     # Build ordered list for last N days
     today = date.today()

@@ -97,4 +97,4 @@ def test_dashboard_is_public(auth_client):
 def test_auth_path_is_public(auth_client):
     # /auth/* should not require token (even if endpoint doesn't exist yet)
     resp = auth_client.get("/auth/callback?token_hash=x&type=magiclink")
-    assert resp.status_code != 401
+    assert resp.status_code in (200, 302, 303, 404)  # not 401 — auth bypass working

@@ -9,7 +9,7 @@ import medstudies.auth.config as _auth_config
 from medstudies.auth.config import COOKIE_ACCESS
 from medstudies.auth.jwt_verifier import InvalidTokenError, TokenExpiredError, verify_token
 
-_PUBLIC_PREFIXES = ("/auth/", "/static/", "/sw.js", "/manifest.json")
+_PUBLIC_PREFIXES = ("/auth/", "/static/", "/sw.js", "/manifest.json", "/favicon.ico")
 
 
 class JWTAuthMiddleware(BaseHTTPMiddleware):
@@ -38,5 +38,5 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 def _extract_token(request: Request) -> str | None:
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
-        return auth[7:]
+        return auth.removeprefix("Bearer ")
     return request.cookies.get(COOKIE_ACCESS)

@@ -24,6 +24,7 @@ from medstudies.engine.scorer import TopicScorer
 from medstudies.engine.weekly_planner import WeeklyPlanBuilder
 from medstudies.ingestion.mock_exam_adapter import MockExamAdapter
 from medstudies.ingestion.csv_adapter import CSVAdapter
+from medstudies.auth.middleware import JWTAuthMiddleware
 
 _log = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+app.add_middleware(JWTAuthMiddleware)
 DASHBOARD_HTML = Path(__file__).parent / "dashboard.html"
 INTERFACE_DIR   = Path(__file__).parent
 

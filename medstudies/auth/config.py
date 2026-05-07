@@ -14,3 +14,7 @@ COOKIE_SECURE = MEDSTUDIES_BASE_URL.startswith("https")
 COOKIE_SAMESITE = "lax"
 ACCESS_MAX_AGE = 3600        # 1 hour
 REFRESH_MAX_AGE = 30 * 86400  # 30 days
+
+import os as _os
+
+AUTH_ENABLED: bool = _os.environ.get("AUTH_ENABLED", "false").lower() == "true"

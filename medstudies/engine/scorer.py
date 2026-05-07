@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import Optional
 import math
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, subqueryload
 
 from medstudies.persistence.models import AnkiSnapshot, Question, StudySession, Subject, Topic, TopicReview
 
@@ -84,7 +84,9 @@ class TopicScorer:
         self._cfg = config or ScoringConfig()
 
     def score_all(self) -> list[TopicScore]:
-        topics = self._db.query(Topic).all()
+        topics = (self._db.query(Topic)
+                  .options(subqueryload(Topic.questions), subqueryload(Topic.sessions))
+                  .all())
         # prefetch to avoid N+1
         reviews = {r.topic_id: r for r in self._db.query(TopicReview).all()}
         snapshots: dict[int, AnkiSnapshot] = {}

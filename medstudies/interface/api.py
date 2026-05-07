@@ -3452,7 +3452,7 @@ async def library_upload(
 @app.get("/api/library/{item_id}/file")
 def library_serve_file(item_id: int):
     with get_session() as db:
-        item = db.query(LibraryItem).get(item_id)
+        item = db.get(LibraryItem, item_id)
         if not item or not item.file_path:
             raise HTTPException(status_code=404)
         fpath = LIBRARY_DIR / item.file_path
@@ -3473,7 +3473,7 @@ def library_serve_file(item_id: int):
 @app.patch("/api/library/{item_id}")
 def library_update(item_id: int, body: dict):
     with get_session() as db:
-        item = db.query(LibraryItem).get(item_id)
+        item = db.get(LibraryItem, item_id)
         if not item:
             raise HTTPException(status_code=404)
         allowed = {"title", "description", "url", "content", "subject_id", "topic_id",
@@ -3488,7 +3488,7 @@ def library_update(item_id: int, body: dict):
 @app.delete("/api/library/{item_id}")
 def library_delete(item_id: int):
     with get_session() as db:
-        item = db.query(LibraryItem).get(item_id)
+        item = db.get(LibraryItem, item_id)
         if not item:
             raise HTTPException(status_code=404)
         # delete file from disk if exists
@@ -3625,7 +3625,7 @@ async def editorial_import_csv(
 @app.patch("/api/editorial/{item_id}/match")
 def editorial_match(item_id: int, body: dict):
     with get_session() as db:
-        item = db.query(EditorialTopic).get(item_id)
+        item = db.get(EditorialTopic, item_id)
         if not item:
             raise HTTPException(404)
         item.topic_id = body.get("topic_id")
@@ -3644,7 +3644,7 @@ def editorial_delete_exam(exam_name: str):
 @app.delete("/api/editorial/{item_id}")
 def editorial_delete(item_id: int):
     with get_session() as db:
-        item = db.query(EditorialTopic).get(item_id)
+        item = db.get(EditorialTopic, item_id)
         if not item:
             raise HTTPException(404)
         db.delete(item); db.commit()
@@ -3735,7 +3735,7 @@ def question_bank_create(body: QuestionBankCreate):
 def question_answer(question_id: int, body: dict):
     chosen = (body.get("chosen_alt") or "").upper()
     with get_session() as db:
-        q = db.query(Question).get(question_id)
+        q = db.get(Question, question_id)
         if not q:
             raise HTTPException(404)
         q.chosen_alt = chosen

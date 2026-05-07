@@ -91,3 +91,11 @@ def test_tenant_session_cross_tenant_get_returns_none(engine, seeded):
     result = db_a.query(Subject).filter_by(id=seeded["subj_b_id"]).first()
     assert result is None
     db_a.close()
+
+
+def test_get_tenant_session_returns_tenant_session(engine):
+    from medstudies.persistence.database import get_tenant_session
+    db = get_tenant_session(engine, USER_A)
+    assert isinstance(db, TenantSession)
+    assert db.user_id == USER_A
+    db.close()

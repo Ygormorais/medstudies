@@ -721,15 +721,18 @@ def stats():
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
     week_start_dt = datetime(week_start.year, week_start.month, week_start.day)
-
-    all_questions = db.query(Question).all()
-    total_q = len(all_questions)
-    week_q  = sum(1 for q in all_questions if q.answered_at >= week_start_dt)
     today_start = datetime(today.year, today.month, today.day)
-    today_q = sum(1 for q in all_questions if q.answered_at >= today_start)
 
-    # Streak: consecutive days with at least 1 question, going back from today
-    distinct_dates = sorted({q.answered_at.date() for q in all_questions}, reverse=True)
+    total_q   = db.query(func.count(Question.id)).scalar() or 0
+    correct_q = db.query(func.count(Question.id)).filter(Question.correct == True).scalar() or 0
+    week_q    = db.query(func.count(Question.id)).filter(Question.answered_at >= week_start_dt).scalar() or 0
+    today_q   = db.query(func.count(Question.id)).filter(Question.answered_at >= today_start).scalar() or 0
+
+    # Streak: only fetch distinct dates (much smaller payload)
+    distinct_dates = sorted(
+        {r[0].date() for r in db.query(Question.answered_at).all() if r[0]},
+        reverse=True,
+    )
     streak = 0
     check = today
     for d in distinct_dates:
@@ -742,7 +745,6 @@ def stats():
     # Best streak
     best_streak = 0
     best_streak_end = None
-    correct_q = sum(1 for q in all_questions if q.correct)
     if distinct_dates:
         asc = sorted(distinct_dates)
         run = 1; run_end = asc[0]
@@ -849,7 +851,7 @@ def stats_daily(days: int = 30, max_days: int = 365):
 @app.delete("/api/questions/{question_id}")
 def delete_question(question_id: int):
     db = get_session()
-    q = db.query(Question).filter(Question.id == question_id).first()
+    q = db.get(Question, question_id)
     if not q:
         raise HTTPException(status_code=404, detail="Questão não encontrada.")
     db.delete(q)
@@ -860,7 +862,7 @@ def delete_question(question_id: int):
 @app.patch("/api/questions/{question_id}")
 def patch_question(question_id: int, payload: dict):
     db = get_session()
-    q = db.query(Question).filter(Question.id == question_id).first()
+    q = db.get(Question, question_id)
     if not q:
         raise HTTPException(status_code=404, detail="Questão não encontrada.")
     if "correct" in payload:
@@ -1557,10 +1559,11 @@ def weekly_report():
     week_start = today - timedelta(days=today.weekday())
     week_start_dt = datetime(week_start.year, week_start.month, week_start.day)
 
-    all_q = db.query(Question, Topic, Subject)\
-        .join(Topic, Question.topic_id == Topic.id)\
-        .join(Subject, Topic.subject_id == Subject.id).all()
-    week_q = [(q, t, s) for q, t, s in all_q if q.answered_at >= week_start_dt]
+    week_q = (db.query(Question, Topic, Subject)
+               .join(Topic, Question.topic_id == Topic.id)
+               .join(Subject, Topic.subject_id == Subject.id)
+               .filter(Question.answered_at >= week_start_dt)
+               .all())
 
     # Per-subject breakdown
     subj_map: dict[str, dict] = defaultdict(lambda: {"total": 0, "correct": 0})

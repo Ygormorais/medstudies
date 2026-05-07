@@ -85,11 +85,16 @@ class TopicScorer:
 
     def score_all(self) -> list[TopicScore]:
         topics = self._db.query(Topic).all()
-        scores = [self._score_topic(t) for t in topics]
+        # prefetch to avoid N+1
+        reviews = {r.topic_id: r for r in self._db.query(TopicReview).all()}
+        snapshots: dict[int, AnkiSnapshot] = {}
+        for snap in self._db.query(AnkiSnapshot).order_by(AnkiSnapshot.synced_at.asc()).all():
+            snapshots[snap.topic_id] = snap  # last write wins = most recent
+        scores = [self._score_topic(t, reviews.get(t.id), snapshots.get(t.id)) for t in topics]
         scores.sort(key=lambda s: s.priority_score, reverse=True)
         return scores
 
-    def _score_topic(self, topic: Topic) -> TopicScore:
+    def _score_topic(self, topic: Topic, sm2_review: Optional[TopicReview], snapshot: Optional[AnkiSnapshot]) -> TopicScore:
         cfg = self._cfg
         subject: Subject = topic.subject
 
@@ -116,18 +121,11 @@ class TopicScorer:
         importance_norm = min(subject.exam_weight, 3.0) / 3.0
 
         # --- Anki difficulty signal ---
-        snapshot: Optional[AnkiSnapshot] = (
-            self._db.query(AnkiSnapshot)
-            .filter_by(topic_id=topic.id)
-            .order_by(AnkiSnapshot.synced_at.desc())
-            .first()
-        )
         anki_difficulty = 0.0
         due_cards = 0
         total_lapses = 0
         if snapshot and snapshot.total_cards:
             due_ratio = snapshot.due_cards / snapshot.total_cards
-            # ease: 2500 = normal. Lower ease → harder cards.
             ease_penalty = 0.0
             if snapshot.avg_ease:
                 ease_penalty = max(0.0, (2500 - snapshot.avg_ease) / 2500)
@@ -137,11 +135,6 @@ class TopicScorer:
             total_lapses = snapshot.total_lapses
 
         # --- SM-2 signal ---
-        sm2_review: Optional[TopicReview] = (
-            self._db.query(TopicReview)
-            .filter_by(topic_id=topic.id)
-            .first()
-        )
         sm2_signal = 0.0
         sm2_days_overdue = 0.0
         sm2_interval = 0.0

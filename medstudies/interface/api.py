@@ -1684,15 +1684,25 @@ def simulado_questions(subject_id: int | None = None, count: int = 20):
     if not topics:
         return []
     selected = random.sample(topics, min(count, len(topics)))
-    scores = {s.topic_id: s for s in TopicScorer(db).score_all()}
+    sel_ids = [t.id for t, _ in selected]
+    # aggregate question stats for selected topics only
+    q_stats = {
+        row[0]: (row[1], row[2])
+        for row in db.query(
+            Question.topic_id,
+            func.count(Question.id),
+            func.sum(Question.correct.cast(Integer)),
+        ).filter(Question.topic_id.in_(sel_ids)).group_by(Question.topic_id).all()
+    }
     return [
         {
             "topic_id": t.id,
             "topic_name": t.name,
             "subject_name": s.name,
             "subject_id": s.id,
-            "error_rate_pct": round(scores[t.id].error_rate * 100, 1) if t.id in scores else 0,
-            "total_questions": scores[t.id].total_questions if t.id in scores else 0,
+            "error_rate_pct": round((1 - (q_stats[t.id][1] or 0) / q_stats[t.id][0]) * 100, 1)
+                              if t.id in q_stats and q_stats[t.id][0] else 0,
+            "total_questions": q_stats[t.id][0] if t.id in q_stats else 0,
         }
         for t, s in selected
     ]

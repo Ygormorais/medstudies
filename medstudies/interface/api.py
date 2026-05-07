@@ -779,11 +779,12 @@ def stats_summary():
     db = get_session()
     today = date.today()
 
-    all_questions = db.query(Question).all()
-    total_q = len(all_questions)
-    correct_q = sum(1 for q in all_questions if q.correct)
-
-    distinct_dates = sorted({q.answered_at.date() for q in all_questions}, reverse=True)
+    total_q   = db.query(func.count(Question.id)).scalar() or 0
+    correct_q = db.query(func.count(Question.id)).filter(Question.correct == True).scalar() or 0
+    distinct_dates = sorted(
+        {r[0].date() for r in db.query(Question.answered_at).all() if r[0]},
+        reverse=True,
+    )
 
     # Current streak
     current_streak = 0

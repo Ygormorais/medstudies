@@ -3450,7 +3450,9 @@ def library_serve_file(item_id: int):
         item = db.get(LibraryItem, item_id)
         if not item or not item.file_path:
             raise HTTPException(status_code=404)
-        fpath = LIBRARY_DIR / item.file_path
+        fpath = (LIBRARY_DIR / item.file_path).resolve()
+        if not str(fpath).startswith(str(LIBRARY_DIR.resolve())):
+            raise HTTPException(status_code=400, detail="Caminho inválido")
         if not fpath.exists():
             raise HTTPException(status_code=404, detail="Arquivo não encontrado no disco")
         suffix = fpath.suffix.lower()

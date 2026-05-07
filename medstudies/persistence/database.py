@@ -5,10 +5,16 @@ import os
 
 DB_PATH = os.environ.get("MEDSTUDIES_DB", "data/medstudies.db")
 
+_engines: dict = {}
+
 
 def get_engine(path: str = DB_PATH):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    return create_engine(f"sqlite:///{path}", echo=False)
+    if path not in _engines:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        _engines[path] = create_engine(f"sqlite:///{path}", echo=False)
+    return _engines[path]
 
 
 def init_db(path: str = DB_PATH):
@@ -37,6 +43,8 @@ def _migrate(engine):
     ]
     with engine.connect() as conn:
         for table, col, col_type in migrations:
+            if col is None:
+                continue
             try:
                 conn.execute(__import__("sqlalchemy").text(
                     f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"

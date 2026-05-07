@@ -3664,10 +3664,12 @@ class QuestionBankCreate(BaseModel):
     difficulty: str = "medio"
 
 
-def _fmt_question(q: Question, db) -> dict:
+def _fmt_question(q: Question, db, topic=None, subject=None) -> dict:
     import json as _json
-    topic = db.query(Topic).get(q.topic_id) if q.topic_id else None
-    subject = db.query(Subject).get(topic.subject_id) if topic and topic.subject_id else None
+    if topic is None:
+        topic = db.get(Topic, q.topic_id) if q.topic_id else None
+    if subject is None:
+        subject = db.get(Subject, topic.subject_id) if topic and topic.subject_id else None
     return {
         "id": q.id, "topic_id": q.topic_id,
         "topic_name": topic.name if topic else None,
@@ -3693,18 +3695,21 @@ def question_bank_list(
     limit: int = 50,
 ):
     with get_session() as db:
-        q = db.query(Question).filter(Question.alternatives.isnot(None))
+        q = (db.query(Question, Topic, Subject)
+               .join(Topic, Question.topic_id == Topic.id)
+               .join(Subject, Topic.subject_id == Subject.id)
+               .filter(Question.alternatives.isnot(None)))
         if topic_id:
             q = q.filter(Question.topic_id == topic_id)
         if subject_id:
-            q = q.join(Topic).filter(Topic.subject_id == subject_id)
+            q = q.filter(Topic.subject_id == subject_id)
         total = q.count()
-        items = q.order_by(Question.answered_at.desc()).offset(skip).limit(limit).all()
+        rows = q.order_by(Question.answered_at.desc()).offset(skip).limit(limit).all()
         return {
             "total": total,
             "skip": skip,
             "limit": limit,
-            "items": [_fmt_question(i, db) for i in items],
+            "items": [_fmt_question(qs, db, topic=t, subject=s) for qs, t, s in rows],
         }
 
 
@@ -3780,14 +3785,13 @@ async def question_bank_import_csv(file: UploadFile = File(...)):
 
     with get_session() as db:
         # build topic map (name -> id) for fast lookup
-        all_topics = db.query(Topic).all()
-        topic_map: dict[str, int] = {t.name.lower().strip(): t.id for t in all_topics}
+        all_topic_rows = db.query(Topic, Subject).join(Subject, Topic.subject_id == Subject.id).all()
+        topic_map: dict[str, int] = {t.name.lower().strip(): t.id for t, _ in all_topic_rows}
 
-        # subject -> first topic fallback
+        # subject -> first topic fallback (single query, no N+1)
         subj_map: dict[str, int] = {}
-        for t in all_topics:
-            s = db.query(Subject).get(t.subject_id)
-            if s and s.name.lower().strip() not in subj_map:
+        for t, s in all_topic_rows:
+            if s.name.lower().strip() not in subj_map:
                 subj_map[s.name.lower().strip()] = t.id
 
         for i, row in enumerate(reader, 1):
@@ -3847,16 +3851,18 @@ def question_bank_wrong(skip: int = 0, limit: int = 50):
     """Questions answered at least once and got wrong — for error review."""
     with get_session() as db:
         q = (
-            db.query(Question)
+            db.query(Question, Topic, Subject)
+            .join(Topic, Question.topic_id == Topic.id)
+            .join(Subject, Topic.subject_id == Subject.id)
             .filter(Question.alternatives.isnot(None), Question.correct == False,
                     Question.chosen_alt.isnot(None))
             .order_by(Question.answered_at.desc())
         )
         total = q.count()
-        items = q.offset(skip).limit(limit).all()
+        rows = q.offset(skip).limit(limit).all()
         return {
             "total": total,
             "skip": skip,
             "limit": limit,
-            "items": [_fmt_question(i, db) for i in items],
+            "items": [_fmt_question(qs, db, topic=t, subject=s) for qs, t, s in rows],
         }

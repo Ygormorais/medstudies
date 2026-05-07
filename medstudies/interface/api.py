@@ -507,8 +507,6 @@ def topic_history(topic_id: int):
             "subject_name": topic.subject.name, "history": history}
 
 
-_DB_PATH = Path(os.getenv("MEDSTUDIES_DB", "data/medstudies.db"))
-
 EDITAL_TEMPLATES = {
     # ── SP State ──────────────────────────────────────────────────────────────
     "sus_sp": {
@@ -3419,34 +3417,40 @@ async def library_upload(
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=400, detail="Arquivo muito grande (max 100 MB)")
 
-    # save to disk
     import uuid
     fname = f"{uuid.uuid4().hex}{suffix}"
     fpath = LIBRARY_DIR / fname
-    fpath.write_bytes(content)
 
-    item_type = "pdf" if suffix == ".pdf" else (
+    item_type = (
+        "pdf"   if suffix == ".pdf" else
         "video" if suffix in {".mp4"} else
-        "note" if suffix in {".txt", ".md"} else "pdf"
+        "audio" if suffix in {".mp3"} else
+        "image" if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"} else
+        "note"  if suffix in {".txt", ".md"} else "file"
     )
 
-    with get_session() as db:
-        item = LibraryItem(
-            title=title,
-            item_type=item_type,
-            description=description or None,
-            file_path=fname,
-            file_size=len(content),
-            subject_id=int(subject_id) if subject_id.isdigit() else None,
-            topic_id=int(topic_id) if topic_id.isdigit() else None,
-            tags=tags or None,
-            source=source or None,
-            year=int(year) if year.isdigit() else None,
-        )
-        db.add(item)
-        db.commit()
-        db.refresh(item)
-        return {"id": item.id, "file_path": fname, "size_bytes": len(content)}
+    fpath.write_bytes(content)
+    try:
+        with get_session() as db:
+            item = LibraryItem(
+                title=title,
+                item_type=item_type,
+                description=description or None,
+                file_path=fname,
+                file_size=len(content),
+                subject_id=int(subject_id) if subject_id.isdigit() else None,
+                topic_id=int(topic_id) if topic_id.isdigit() else None,
+                tags=tags or None,
+                source=source or None,
+                year=int(year) if year.isdigit() else None,
+            )
+            db.add(item)
+            db.commit()
+            db.refresh(item)
+            return {"id": item.id, "file_path": fname, "size_bytes": len(content)}
+    except Exception:
+        fpath.unlink(missing_ok=True)
+        raise
 
 
 @app.get("/api/library/{item_id}/file")

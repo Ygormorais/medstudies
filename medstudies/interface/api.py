@@ -684,28 +684,6 @@ def apply_edital(template_id: str = "enare"):
     return {"ok": True, "template": tpl["name"], "updated": updated, "created": created}
 
 
-@app.get("/api/backup")
-def backup_db():
-    if not _DB_PATH.exists():
-        raise HTTPException(status_code=404, detail="Banco não encontrado.")
-    filename = f"medstudies_backup_{date.today().isoformat()}.db"
-    return FileResponse(str(_DB_PATH), filename=filename, media_type="application/octet-stream")
-
-
-@app.post("/api/restore")
-async def restore_db(file: UploadFile = File(...)):
-    from medstudies.persistence.database import get_engine
-    content = await file.read()
-    if not content.startswith(b"SQLite format 3\x00"):
-        raise HTTPException(status_code=400, detail="Arquivo inválido — não é um banco SQLite.")
-    get_engine().dispose()
-    if _DB_PATH.exists():
-        _DB_PATH.rename(_DB_PATH.with_suffix(".db.bak"))
-    _DB_PATH.write_bytes(content)
-    init_db()
-    return {"ok": True, "message": "Banco restaurado. Recarregue a página."}
-
-
 @app.get("/api/news")
 def get_news(query: str = "internal medicine", max_results: int = 15):
     import urllib.request, urllib.parse

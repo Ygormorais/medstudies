@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, subqueryload
 
 from medstudies.persistence.models import Question, Topic, TopicReview
 
@@ -50,7 +50,7 @@ class SM2Engine:
 
     def update_all(self) -> int:
         """Recompute SM-2 state for every topic. Returns count updated."""
-        topics = self._db.query(Topic).all()
+        topics = self._db.query(Topic).options(subqueryload(Topic.questions)).all()
         updated = 0
         for topic in topics:
             if self._update_topic(topic):

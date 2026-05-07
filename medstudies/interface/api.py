@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from sqlalchemy import func
+from sqlalchemy import func, Integer
 from medstudies.persistence.database import get_session, init_db
 from medstudies.persistence.models import DailyPlan, EditorialTopic, FlashCard, LibraryItem, Question, StudySession, Subject, Tag, Topic, TopicReview
 from medstudies.engine.planner import DailyPlanBuilder, DailyStudyPlan
@@ -2206,25 +2206,25 @@ def sessions_by_topic():
 @app.get("/api/stats/subjects/ranking")
 def subjects_ranking():
     db = get_session()
-    subjects = db.query(Subject).all()
+    rows = (db.query(Subject, func.count(Question.id), func.sum(Question.correct.cast(Integer)))
+              .join(Topic, Topic.subject_id == Subject.id)
+              .join(Question, Question.topic_id == Topic.id)
+              .group_by(Subject.id)
+              .all())
+    topic_counts = {s.id: db.query(func.count(Topic.id)).filter(Topic.subject_id == s.id).scalar() or 0
+                    for s, _, _ in rows}
     result = []
-    for s in subjects:
-        topic_ids = [t.id for t in s.topics]
-        if not topic_ids:
+    for s, total, correct_sum in rows:
+        if not total:
             continue
-        qs = db.query(Question).filter(Question.topic_id.in_(topic_ids)).all()
-        if not qs:
-            continue
-        total = len(qs)
-        correct = sum(1 for q in qs if q.correct)
-        error_pct = round((total - correct) / total * 100, 1)
+        correct = correct_sum or 0
         result.append({
             "subject": s.name,
             "total": total,
             "correct": correct,
             "accuracy_pct": round(correct / total * 100, 1),
-            "error_pct": error_pct,
-            "topics": len(s.topics),
+            "error_pct": round((total - correct) / total * 100, 1),
+            "topics": topic_counts.get(s.id, 0),
         })
     return sorted(result, key=lambda x: x["accuracy_pct"], reverse=True)
 
@@ -2586,8 +2586,10 @@ class TagIn(BaseModel):
 @app.get("/api/tags")
 def list_tags():
     db = get_session()
+    from sqlalchemy.orm import subqueryload
     return [{"id": t.id, "name": t.name, "color": t.color,
-             "topic_count": len(t.topics)} for t in db.query(Tag).order_by(Tag.name).all()]
+             "topic_count": len(t.topics)}
+            for t in db.query(Tag).options(subqueryload(Tag.topics)).order_by(Tag.name).all()]
 
 
 @app.post("/api/tags")

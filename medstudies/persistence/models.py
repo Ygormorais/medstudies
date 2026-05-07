@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 from sqlalchemy import (
     Column, Index, Integer, String, Float, DateTime, ForeignKey,
     Boolean, Text, UniqueConstraint,

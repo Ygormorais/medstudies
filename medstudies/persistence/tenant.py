@@ -53,7 +53,7 @@ def _scope_to_tenant(query: Query) -> Query:
     query.enable_assertions(False).filter(...) to bypass the guard — this is
     a public Query API method and does not touch private attributes.
     """
-    session = query.session
+    session = getattr(query, "session", None)
     if not isinstance(session, TenantSession):
         return query
     for desc in query.column_descriptions:
